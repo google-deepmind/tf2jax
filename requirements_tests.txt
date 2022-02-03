@@ -1,0 +1,3 @@
+dm-haiku
+dm-sonnet>=2.0.0
+
