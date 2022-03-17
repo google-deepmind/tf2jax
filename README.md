@@ -1,5 +1,7 @@
 # TF2JAX
 
+![CI status](https://github.com/deepmind/tf2jax/workflows/ci/badge.svg)
+
 TF2JAX is an experimental library for converting [TensorFlow] functions/graphs
 to [JAX] functions.
 
