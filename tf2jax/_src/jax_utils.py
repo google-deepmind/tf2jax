@@ -19,7 +19,7 @@ from typing import Optional, Sequence, Union
 import jax
 
 # TODO(shaobohou) Is there a non-direct alias?
-from tensorflow.compiler.xla import xla_data_pb2  # pylint: disable=no-name-in-module
+from tensorflow.compiler.xla import xla_data_pb2  # pytype: disable=import-error
 
 
 def get_conv_sequence(
