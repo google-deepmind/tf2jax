@@ -26,6 +26,16 @@ written in JAX.
 
 [TOC]
 
+## Installation
+
+TF2JAX can be installed with `pip` directly from github, with the following command:
+
+`pip install git+git://github.com/deepmind/tf2jax.git`
+
+or from PyPI:
+
+`pip install tf2jax`
+
 ## Motivations
 
 TF2JAX enables existing TensorFlow functions and models (including
@@ -37,7 +47,7 @@ to the users, which is useful for debugging and introspection.
 This also provide a pathway for JAX users to integrate JAX functions serialized
 via `jax2tf.convert`, back into their existing JAX codebases.
 
-See [section](#alternatives) at the end for comparison with an alternative
+See [section](#alternatives-jax2tfcall-tf) at the end for comparison with an alternative
 approach provided by `jax2tf.call_tf`.
 
 ## Disclaimer
