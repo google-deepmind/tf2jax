@@ -46,7 +46,8 @@ pip wheel --verbose --no-deps --no-clean dist/tf2jax*.tar.gz
 pip install tf2jax*.whl
 
 # Check types with pytype.
-pytype `find tf2jax/_src/ -name "*py" | xargs` -k
+# Also see https://github.com/google/pytype/issues/1169
+pytype `find tf2jax/_src/ -name "*py" | xargs` -k --use-enum-overlay
 
 # Run tests using pytest.
 # Change directory to avoid importing the package from repo root.

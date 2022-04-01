@@ -4,4 +4,4 @@ dm-tree>=0.1.5
 jax>=0.1.55
 jaxlib>=0.1.37
 numpy>=1.18.0
-tf-nightly  # Should be tensorflow>=2.8.0, not yet released as of 2022.01.13.
+tensorflow>=2.8.0
