@@ -42,6 +42,7 @@ from tensorflow.python.framework import ops as tf_ops  # pylint: disable=no-name
 _EMPTY_RETURN_OP_NAME = "__NO_RETURN__"
 _EMPTY_RETURN_VALUE = object()
 
+_UNUSED_INPUT = object()
 
 _config = dict(
     strict_shape_check=True,
@@ -2672,9 +2673,9 @@ def _convert(
   constants = constants or {}
 
   # Canonicalise inputs and outputs.
-  input_path_to_specs = [
-      (p, v) for p, v in tree.flatten_with_path(structured_inputs)
-  ]
+  input_path_to_specs = [(p, v)
+                         for p, v in tree.flatten_with_path(structured_inputs)
+                         if v is not _UNUSED_INPUT]
   # TODO(shaobohou) Remove temporary fix for TF-Hub.
   replace_fn = (lambda k: k.replace("$", "___") if isinstance(k, str) else k)
   input_path_to_specs = [

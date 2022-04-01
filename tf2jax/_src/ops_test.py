@@ -71,7 +71,7 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
                             "tanh", "relu", "relu6", "elu")
   def test_activations(self, op_name):
     np.random.seed(42)
-    inputs = np.random.normal(size=(10, 5)).astype(np.float32)
+    inputs = [np.random.normal(size=(10, 5)).astype(np.float32)]
     self._test_convert(getattr(tf.nn, op_name), inputs)
 
   @chex.variants(with_jit=True, without_jit=True)
