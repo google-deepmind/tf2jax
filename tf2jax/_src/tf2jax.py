@@ -49,7 +49,7 @@ _config = dict(
     strict_dtype_check=False,
     force_const_float32_to_bfloat16=False,
     force_const_float64_to_bfloat16=False,
-    convert_custom_gradient=False,
+    convert_custom_gradient=True,
     infer_relu_from_jax2tf=True,
 )
 
