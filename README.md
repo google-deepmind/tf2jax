@@ -48,7 +48,7 @@ to the users, which is useful for debugging and introspection.
 This also provide a pathway for JAX users to integrate JAX functions serialized
 via `jax2tf.convert`, back into their existing JAX codebases.
 
-See [section](#alternatives-jax2tfcall-tf) at the end for comparison with an alternative
+See [section](#alternatives) at the end for comparison with an alternative
 approach provided by `jax2tf.call_tf`.
 
 ## Disclaimer
@@ -278,7 +278,9 @@ variables.
 
 TF1 control flows are not supported.
 
-## Alternatives (`jax2tf.call_tf`)
+## Alternatives
+
+### `jax2tf.call_tf`
 
 `jax2tf` now also offers the experimental `call_tf` function which allows JAX to
 call TensorFlow functions. For compiled code, this works by staging out
