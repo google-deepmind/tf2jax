@@ -40,12 +40,19 @@ def _compute_gradients(func, *inputs):
 
 class Jax2TfTest(parameterized.TestCase, tf.test.TestCase):
 
-  def _test_convert(self,
-                    jax_func,
-                    inputs,
-                    with_grad,
-                    enable_xla,
-                    with_custom_grad=False):
+  def _test_convert(
+      self,
+      jax_func,
+      inputs,
+      with_grad,
+      enable_xla,
+      with_custom_grad=False,
+      grad_tols=None,
+  ):
+    grad_tols = grad_tols or {}
+    def assert_grad_all_close(*args):
+      return self.assertAllClose(*args, **grad_tols)
+
     # Jax
     jax_func = self.variant(jax_func)
     jax_outputs = jax_func(*inputs)
@@ -67,7 +74,7 @@ class Jax2TfTest(parameterized.TestCase, tf.test.TestCase):
     jax.tree_map(self.assertAllClose, rejax_outputs, tf_outputs)
     if with_grad:
       rejax_grads = _compute_gradients(rejax_func, *inputs)
-      jax.tree_map(self.assertAllClose, jax_grads, rejax_grads)
+      jax.tree_map(assert_grad_all_close, jax_grads, rejax_grads)
 
     # Jax -> TF -> SavedModel -> TF
     model = tf.Module()
@@ -89,7 +96,7 @@ class Jax2TfTest(parameterized.TestCase, tf.test.TestCase):
     jax.tree_map(self.assertAllClose, rejax_too_outputs, tf_outputs)
     if with_grad:
       rejax_too_grads = _compute_gradients(rejax_too_func, *inputs)
-      jax.tree_map(self.assertAllClose, jax_grads, rejax_too_grads)
+      jax.tree_map(assert_grad_all_close, jax_grads, rejax_too_grads)
 
   @chex.variants(with_jit=True, without_jit=True)
   @parameterized.named_parameters(
@@ -185,6 +192,8 @@ class Jax2TfTest(parameterized.TestCase, tf.test.TestCase):
   def test_conv2d(self, with_grad, enable_xla):
     np.random.seed(42)
 
+    tols = dict(rtol=1e-5) if jax.default_backend().lower() == "gpu" else {}
+
     def forward(x):
       conv = hk.Conv2D(
           output_channels=7, kernel_shape=3, stride=1, padding="SAME")
@@ -196,7 +205,10 @@ class Jax2TfTest(parameterized.TestCase, tf.test.TestCase):
     variables = hk.data_structures.to_mutable_dict(variables)
     jax_fn = hk.without_apply_rng(forward).apply
     self._test_convert(
-        jax_fn, [variables, inputs], with_grad=with_grad, enable_xla=enable_xla)
+        jax_fn, [variables, inputs],
+        with_grad=with_grad,
+        enable_xla=enable_xla,
+        grad_tols=tols)
 
   @chex.variants(with_jit=True)
   @parameterized.named_parameters(

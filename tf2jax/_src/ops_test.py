@@ -1384,6 +1384,9 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
       return tf.while_loop(cond, body, [x, step])
     self._test_convert(while_loop, inputs)
 
+    if jax.default_backend().lower() == "gpu":
+      self.skipTest("Skip remaining tests on GPU due to CUDA errors.")
+
     def raw_stateless_while(x):
       loop_vars = [x, step]
       return tf.raw_ops.StatelessWhile(
