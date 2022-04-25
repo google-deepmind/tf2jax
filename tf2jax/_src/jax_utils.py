@@ -40,31 +40,6 @@ def get_conv_sequence(
     raise ValueError(f"Unexpected sequence={value}.")
 
 
-# From https://github.com/deepmind/dm-haiku/blob/master/haiku/_src/conv.py
-def to_conv_dimension_numbers(
-    num_spatial_dims: int,
-    channels_last: bool,
-    transpose: bool,
-) -> jax.lax.ConvDimensionNumbers:
-  """Create a `lax.ConvDimensionNumbers` for the given inputs."""
-  num_dims = num_spatial_dims + 2
-
-  if channels_last:
-    spatial_dims = tuple(range(1, num_dims - 1))
-    image_dn = (0, num_dims - 1) + spatial_dims
-  else:
-    spatial_dims = tuple(range(2, num_dims))
-    image_dn = (0, 1) + spatial_dims
-
-  if transpose:
-    kernel_dn = (num_dims - 2, num_dims - 1) + tuple(range(num_dims - 2))
-  else:
-    kernel_dn = (num_dims - 1, num_dims - 2) + tuple(range(num_dims - 2))
-
-  return jax.lax.ConvDimensionNumbers(
-      lhs_spec=image_dn, rhs_spec=kernel_dn, out_spec=image_dn)
-
-
 def convolution_dimension_numbers_from_proto(
     message) -> jax.lax.ConvDimensionNumbers:
   """Converts a XLA ConvolutionDimensionNumbers to a ConvDimensionNumbers."""

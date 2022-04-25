@@ -27,6 +27,10 @@ from tf2jax._src import tf2jax
 import tree
 
 
+def _reorder(vals, inds):
+  return [vals[idx] for idx in inds]
+
+
 @contextlib.contextmanager
 def _nullcontext(enter_result=None):
   yield enter_result
@@ -335,14 +339,26 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
 
   @chex.variants(with_jit=True, without_jit=True)
   @parameterized.named_parameters(
-      ("one", [3, 5, 5, 7], [3, 3, 7, 11], [1, 2, 2, 1], "SAME"),
-      ("two", [2, 1, 16, 24], [1, 8, 3, 48], [1, 1, 1, 1], "VALID"))
-  def test_conv2d(self, input_shape, filter_shape, strides, padding):
+      ("one", [3, 5, 5, 7], [3, 3, 7, 11], [1, 2, 2, 1], "SAME", "NHWC"),
+      ("two", [2, 1, 16, 24], [1, 8, 3, 48], [1, 1, 1, 1], "VALID", "NHWC"),
+      ("three", [3, 5, 5, 7], [3, 3, 7, 11], [1, 2, 2, 1], "SAME", "NCHW"),
+      ("four", [2, 1, 16, 24], [1, 8, 3, 48], [1, 1, 1, 1], "VALID", "NCHW"),
+  )
+  def test_conv2d(self, input_shape, filter_shape, strides, padding,
+                  data_format):
     np.random.seed(42)
 
     dilations = [1, 1, 1, 1]
     filters = np.random.normal(size=filter_shape).astype(np.float32)
     inputs = np.random.normal(size=input_shape).astype(np.float32)
+    if data_format == "NCHW":
+      if jax.default_backend().lower() == "cpu":
+        self.skipTest("TensorFlow Conv2D does not support NCHW on CPU.")
+      inputs = np.transpose(inputs, [0, 3, 1, 2])
+      strides = _reorder(strides, [0, 3, 1, 2])
+      dilations = _reorder(dilations, [0, 3, 1, 2])
+    else:
+      assert data_format == "NHWC"
 
     def tf_func(x):
       return tf.nn.conv2d(
@@ -350,6 +366,7 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
           filters=filters,
           strides=strides,
           padding=padding,
+          data_format=data_format,
           dilations=dilations)
     self._test_convert(tf_func, inputs)
 
@@ -358,27 +375,46 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
           input=x,
           filter=filters,
           strides=strides,
-          dilations=dilations,
-          padding=padding)
+          padding=padding,
+          data_format=data_format,
+          dilations=dilations)
     self._test_convert(raw_func, inputs)
 
   @chex.variants(with_jit=True, without_jit=True)
-  def test_conv2d_transpose(self):
+  @parameterized.named_parameters(
+      chex.params_product(
+          (("NHWC", "NHWC"), ("NCHW", "NCHW"),),
+          named=True,
+      ))
+  def test_conv2d_transpose(self, data_format):
     np.random.seed(42)
 
     output_shape = [3, 8, 8, 128]
+    padding = "SAME"
     strides = [1, 2, 2, 1]
     dilations = [1, 1, 1, 1]
     filters = np.random.normal(size=[7, 7, 128, 13]).astype(np.float32)
     inputs = np.random.normal(size=[3, 4, 4, 13]).astype(np.float32)
+    if data_format == "NCHW":
+      if jax.default_backend().lower() == "cpu":
+        self.skipTest(
+            "TensorFlow Conv2DBackpropInput does not support NCHW on CPU.")
+      inputs = np.transpose(inputs, [0, 3, 1, 2])
+      strides = _reorder(strides, [0, 3, 1, 2])
+      dilations = _reorder(dilations, [0, 3, 1, 2])
+      output_shape = _reorder(output_shape, [0, 3, 1, 2])
+    else:
+      assert data_format == "NHWC"
 
     def tf_func(x):
       return tf.nn.conv2d_transpose(
           x,
           filters=filters,
+          output_shape=output_shape,
           strides=strides,
-          dilations=dilations,
-          output_shape=output_shape)
+          padding=padding,
+          data_format=data_format,
+          dilations=dilations)
     self._test_convert(tf_func, inputs)
 
     def raw_func(x):
@@ -387,7 +423,9 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
           filter=filters,
           out_backprop=x,
           strides=strides,
-          padding="SAME")
+          padding=padding,
+          data_format=data_format,
+          dilations=dilations)
     self._test_convert(raw_func, inputs)
 
   @chex.variants(with_jit=True, without_jit=True)
@@ -415,9 +453,10 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
       chex.params_product(
           (("without_explicit_paddings", False),
            ("with_explicit_paddings", True)),
+          (("NHWC", "NHWC"), ("NCHW", "NCHW"),),
           named=True,
       ))
-  def test_depthwise_conv2d(self, use_explicit_paddings):
+  def test_depthwise_conv2d(self, use_explicit_paddings, data_format):
     np.random.seed(42)
 
     strides = [1, 2, 2, 1]
@@ -425,13 +464,28 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
     inputs = np.random.normal(size=[3, 5, 5, 7]).astype(np.float32)
     explicit_paddings = ([[0, 0], [8, 8], [8, 8], [0, 0]]
                          if use_explicit_paddings else [[]])
+    dilations = [1, 1, 1, 1]
+
+    if data_format == "NCHW":
+      if jax.default_backend().lower() == "cpu":
+        self.skipTest(
+            "TensorFlow DepthwiseConv2dNative does not support NCHW on CPU.")
+      inputs = np.transpose(inputs, [0, 3, 1, 2])
+      strides = _reorder(strides, [0, 3, 1, 2])
+      dilations = _reorder(dilations, [0, 3, 1, 2])
+      if use_explicit_paddings:
+        explicit_paddings = _reorder(explicit_paddings, [0, 3, 1, 2])
+    else:
+      assert data_format == "NHWC"
 
     def tf_func(x):
       return tf.nn.depthwise_conv2d(
           x,
           filter=filters,
           strides=strides,
-          padding=explicit_paddings if use_explicit_paddings else "SAME")
+          padding=explicit_paddings if use_explicit_paddings else "SAME",
+          data_format=data_format,
+          dilations=dilations[2:] if data_format == "NCHW" else dilations[1:-1])
     self._test_convert(tf_func, inputs)
 
     def raw_func(x):
@@ -440,7 +494,9 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
           filter=filters,
           strides=strides,
           padding="EXPLICIT" if use_explicit_paddings else "SAME",
-          explicit_paddings=sum(explicit_paddings, []))
+          explicit_paddings=sum(explicit_paddings, []),
+          data_format=data_format,
+          dilations=dilations)
     self._test_convert(raw_func, inputs)
 
   @chex.variants(with_jit=True, without_jit=True)

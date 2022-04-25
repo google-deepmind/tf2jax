@@ -437,15 +437,17 @@ def _conv2d(proto):
   strides = tuple(proto.attr["strides"].list.i)
   data_format = str(proto.attr["data_format"].s, "utf-8")
   if data_format == "NHWC":
-    dimension_numbers = ops.to_conv_dimension_numbers(
-        2, channels_last=True, transpose=False)
+    dimension_numbers = ("NHWC", "HWIO", "NHWC")
     strides = ops.get_conv_sequence(strides, ndim=2, channel_index=-1)
     dilations = ops.get_conv_sequence(dilations, ndim=2, channel_index=-1)
     feature_group_count_fn = lambda lhs, rhs: lhs.shape[3] // rhs.shape[2]
+  elif data_format == "NCHW":
+    dimension_numbers = ("NCHW", "HWIO", "NCHW")
+    strides = ops.get_conv_sequence(strides, ndim=2, channel_index=1)
+    dilations = ops.get_conv_sequence(dilations, ndim=2, channel_index=1)
+    feature_group_count_fn = lambda lhs, rhs: lhs.shape[1] // rhs.shape[2]
   else:
-    # TODO(shaobohou) Support other data formats.
-    raise ValueError(
-        f"Conv2D only supports NHWC format at the moment, found {data_format}.")
+    raise ValueError(f"Found unsupported data format {data_format}.")
 
   _ = proto.attr["use_cudnn_on_gpu"].b
 
@@ -482,14 +484,15 @@ def _conv2d_backprop_input(proto):
   strides = tuple(proto.attr["strides"].list.i)
   data_format = str(proto.attr["data_format"].s, "utf-8")
   if data_format == "NHWC":
-    dimension_numbers = ops.to_conv_dimension_numbers(
-        2, channels_last=True, transpose=True)
+    dimension_numbers = ("NHWC", "HWIO", "NHWC")
     strides = ops.get_conv_sequence(strides, ndim=2, channel_index=-1)
     dilations = ops.get_conv_sequence(dilations, ndim=2, channel_index=-1)
+  elif data_format == "NCHW":
+    dimension_numbers = ("NCHW", "HWIO", "NCHW")
+    strides = ops.get_conv_sequence(strides, ndim=2, channel_index=1)
+    dilations = ops.get_conv_sequence(dilations, ndim=2, channel_index=1)
   else:
-    # TODO(shaobohou) Support other data formats.
-    raise ValueError("Conv2DBackpropInput only supports NHWC format at the "
-                     f"moment, found {data_format}.")
+    raise ValueError(f"Found unsupported data format {data_format}.")
 
   _ = proto.attr["use_cudnn_on_gpu"].b
 
@@ -501,7 +504,7 @@ def _conv2d_backprop_input(proto):
     del input_sizes
     return jax.lax.conv_transpose(
         out_backprop,
-        jnp.swapaxes(filters, 2, 3),
+        filters,
         strides=strides,
         padding=padding,
         rhs_dilation=dilations,
@@ -556,15 +559,19 @@ def _depthwise_conv2d(proto):
   if data_format == "NHWC":
     if explicit_paddings:
       padding = padding[1:3]
-    dimension_numbers = ops.to_conv_dimension_numbers(
-        2, channels_last=True, transpose=False)
+    dimension_numbers = ("NHWC", "HWIO", "NHWC")
     strides = ops.get_conv_sequence(strides, ndim=2, channel_index=-1)
     dilations = ops.get_conv_sequence(dilations, ndim=2, channel_index=-1)
     channel_index = -1
+  elif data_format == "NCHW":
+    if explicit_paddings:
+      padding = padding[2:]
+    dimension_numbers = ("NCHW", "HWIO", "NCHW")
+    strides = ops.get_conv_sequence(strides, ndim=2, channel_index=1)
+    dilations = ops.get_conv_sequence(dilations, ndim=2, channel_index=1)
+    channel_index = 1
   else:
-    # TODO(shaobohou) Support other data formats.
-    raise ValueError(
-        f"Conv2D only supports NHWC format at the moment, found {data_format}.")
+    raise ValueError(f"Found unsupported data format {data_format}.")
 
   def _func(lhs: jnp.ndarray, rhs: jnp.ndarray) -> jnp.ndarray:
     output_dim = rhs.shape[2] * rhs.shape[3]
