@@ -255,18 +255,58 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
     self._test_convert(argmin_fn, inputs)
 
   @chex.variants(with_jit=True, without_jit=True)
-  @parameterized.parameters("SAME", "VALID")
-  def test_avg_pool(self, padding):
+  @parameterized.named_parameters(
+      chex.params_product(
+          (("SAME", "SAME"), ("VALID", "VALID")),
+          (("NHWC", "NHWC"), ("NCHW", "NCHW")),
+          named=True,
+      ))
+  def test_avg_pool(self, padding, data_format):
+    np.random.seed(42)
+
     inputs = np.random.normal(size=(10, 32, 16, 8)).astype(np.float32)
+    ksize = (1, 2, 3, 1)
+    strides = (1, 3, 2, 1)
+
+    if data_format == "NCHW":
+      if jax.default_backend().lower() == "cpu":
+        self.skipTest("TensorFlow AvgPool does not support NCHW on CPU.")
+      inputs = np.transpose(inputs, [0, 3, 1, 2])
+      ksize = _reorder(ksize, [0, 3, 1, 2])
+      strides = _reorder(strides, [0, 3, 1, 2])
+    else:
+      assert data_format == "NHWC"
 
     def pool(x):
       return tf.raw_ops.AvgPool(
           value=x,
-          ksize=(1, 2, 3, 1),
-          strides=(1, 3, 2, 1),
+          ksize=ksize,
+          strides=strides,
           padding=padding,
-          data_format="NHWC")
+          data_format=data_format)
     self._test_convert(pool, [inputs])
+
+  @chex.variants(with_jit=True, without_jit=True)
+  @parameterized.named_parameters(
+      chex.params_product(
+          (("NHWC", "NHWC"), ("NCHW", "NCHW")),
+          named=True,
+      ))
+  def test_bias_add(self, data_format):
+    np.random.seed(42)
+
+    inputs = np.random.normal(size=(10, 32, 16, 8)).astype(np.float32)
+    bias = np.linspace(-1., 1., 8).astype(np.float32)
+
+    if data_format == "NCHW":
+      inputs = np.transpose(inputs, [0, 3, 1, 2])
+    else:
+      assert data_format == "NHWC"
+
+    def pool(x, b):
+      return tf.raw_ops.BiasAdd(value=x, bias=b, data_format=data_format)
+
+    self._test_convert(pool, [inputs, bias])
 
   @chex.variants(with_jit=True, without_jit=True)
   def test_bitcast(self):
@@ -566,22 +606,28 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
               ("FusedBatchNormV3", "FusedBatchNormV3"),
           ),
           (("avg_zero", 0.0), ("avg_half", 0.5), ("avg_one", 1.0)),
+          (("NHWC", "NHWC"), ("NCHW", "NCHW")),
           named=True,
       ))
-  def test_fused_batch_norm(self, training, op_name, avg_factor):
+  def test_fused_batch_norm(self, training, op_name, avg_factor, data_format):
     np.random.seed(42)
 
     ndim = 5
     inputs = np.random.normal(size=(3, 16, 16, ndim)).astype(np.float32)
+    if data_format == "NCHW":
+      inputs = np.transpose(inputs, [0, 3, 1, 2])
+    else:
+      assert data_format == "NHWC"
 
     def raw_func(x):
       outputs = getattr(tf.raw_ops, op_name)(
           x=x,
           scale=[3.0] * ndim,
           offset=[2.0] * ndim,
-          mean=np.array(range(5), np.float32),
-          variance=np.array(range(5), np.float32) * 0.1,
+          mean=np.array(range(ndim), np.float32),
+          variance=np.array(range(ndim), np.float32) * 0.1,
           exponential_avg_factor=avg_factor,
+          data_format=data_format,
           is_training=training)
       return outputs[:3]
 
@@ -810,17 +856,35 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
     self._test_convert(max_static, [])
 
   @chex.variants(with_jit=True, without_jit=True)
-  @parameterized.parameters("SAME", "VALID")
-  def test_max_pool(self, padding):
+  @parameterized.named_parameters(
+      chex.params_product(
+          (("SAME", "SAME"), ("VALID", "VALID")),
+          (("NHWC", "NHWC"), ("NCHW", "NCHW")),
+          named=True,
+      ))
+  def test_max_pool(self, padding, data_format):
+    np.random.seed(42)
+
     inputs = np.random.normal(size=(10, 32, 16, 8)).astype(np.float32)
+    ksize = (1, 2, 3, 1)
+    strides = (1, 3, 2, 1)
+
+    if data_format == "NCHW":
+      if jax.default_backend().lower() == "cpu":
+        self.skipTest("TensorFlow MaxPool does not support NCHW on CPU.")
+      inputs = np.transpose(inputs, [0, 3, 1, 2])
+      ksize = _reorder(ksize, [0, 3, 1, 2])
+      strides = _reorder(strides, [0, 3, 1, 2])
+    else:
+      assert data_format == "NHWC"
 
     def pool(x):
       return tf.raw_ops.MaxPool(
           input=x,
-          ksize=(1, 2, 3, 1),
-          strides=(1, 3, 2, 1),
+          ksize=ksize,
+          strides=strides,
           padding=padding,
-          data_format="NHWC")
+          data_format=data_format)
     self._test_convert(pool, [inputs])
 
   @chex.variants(with_jit=True, without_jit=True)

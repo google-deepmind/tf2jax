@@ -475,6 +475,7 @@ class Jax2TfTest(parameterized.TestCase, tf.test.TestCase):
           (
               ("min", jax.lax.min, jnp.inf),
               ("max", jax.lax.max, -jnp.inf),
+              ("add", jax.lax.add, 0.0),
           ),
           named=True,
       ))

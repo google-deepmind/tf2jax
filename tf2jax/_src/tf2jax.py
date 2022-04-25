@@ -269,16 +269,14 @@ def _avg_pool(proto):
 
   explicit_paddings = tuple(proto.attr["explicit_paddings"].list.i)
   if explicit_paddings:
-    raise ValueError("explicit_padding in MaxPool not yet supported.")
+    raise ValueError("explicit_padding in AvgPool not yet supported.")
 
   padding = str(proto.attr["padding"].s, "utf-8")
   ksize = tuple(proto.attr["ksize"].list.i)
   strides = tuple(proto.attr["strides"].list.i)
   data_format = str(proto.attr["data_format"].s, "utf-8")
-  if data_format != "NHWC":
-    # TODO(shaobohou) Support other data formats.
-    raise ValueError(
-        f"AvgPool only supports NHWC at the moment, found {data_format}.")
+  if data_format not in ("NHWC", "NCHW"):
+    raise ValueError(f"Found unsupported data format {data_format}.")
 
   reduce_window_args = dict(
       init_value=0.,
@@ -306,15 +304,20 @@ def _bias_add(proto):
 
   data_format = str(proto.attr["data_format"].s, "utf-8")
   if data_format == "NHWC":
-    # TODO(shaobohou) check broadcasting?
-    pass
+    reduce_axis = (0, 1, 2)
+  elif data_format == "NCHW":
+    reduce_axis = (0, 2, 3)
   else:
-    # TODO(shaobohou) Support other data formats.
-    raise ValueError(
-        f"BiasAdd only supports NHWC format at the moment, found {data_format}."
-    )
+    raise ValueError(f"Found unsupported data format {data_format}.")
 
-  return anp.add
+  def _func(value: jnp.ndarray, bias: jnp.ndarray) -> jnp.ndarray:
+    if bias.ndim != 1:
+      raise ValueError(
+          f"Expected `bias` as a 1D array, found array with {bias.ndim} dims.")
+    bias = anp.expand_dims(bias, axis=reduce_axis)
+    return anp.add(value, bias)
+
+  return _func
 
 
 @register_operation("Bitcast")
@@ -642,12 +645,13 @@ def _fused_batch_norm(proto):
 
   data_format = str(proto.attr["data_format"].s, "utf-8")
   if data_format == "NHWC":
-    # TODO(shaobohou) check broadcasting?
     reduce_axis = (0, 1, 2)
+    channel_dim = 3
+  elif data_format == "NCHW":
+    reduce_axis = (0, 2, 3)
+    channel_dim = 1
   else:
-    # TODO(shaobohou) Support other data formats.
-    raise ValueError(
-        f"FusedBatchNormV2 does not yet support data_format={data_format}.")
+    raise ValueError(f"Found unsupported data format {data_format}.")
 
   epsilon = proto.attr["epsilon"].f
   exponential_avg_factor = proto.attr["exponential_avg_factor"].f
@@ -666,12 +670,18 @@ def _fused_batch_norm(proto):
     est_mean = batch_mean if is_training else running_mean
     est_var = batch_var if is_training else running_var
 
+    # Prep for broadcasting.
+    scale = jnp.expand_dims(scale, axis=reduce_axis)
+    offset = jnp.expand_dims(offset, axis=reduce_axis)
+    est_mean = jnp.expand_dims(est_mean, axis=reduce_axis)
+    est_var = jnp.expand_dims(est_var, axis=reduce_axis)
+
     inv = scale * jax.lax.rsqrt(est_var + epsilon)
     norm_x = jnp.asarray((x - est_mean) * inv + offset, x.dtype)
 
     if is_training:
       # Apply Bessel's correction and additional smoothing.
-      ndata = x.size / x.shape[3]
+      ndata = x.size / x.shape[channel_dim]
       correction = ndata / jnp.maximum(ndata - 1.0, 1.0)
       running_var = running_var if running_var.size else 0
       running_mean = running_mean if running_mean.size else 0
@@ -925,10 +935,8 @@ def _max_pool(proto):
   ksize = tuple(proto.attr["ksize"].list.i)
   strides = tuple(proto.attr["strides"].list.i)
   data_format = str(proto.attr["data_format"].s, "utf-8")
-  if data_format != "NHWC":
-    # TODO(shaobohou) Support other data formats.
-    raise ValueError(
-        f"MaxPool only supports NHWC at the moment, found {data_format}.")
+  if data_format not in ("NHWC", "NCHW"):
+    raise ValueError(f"Found unsupported data format {data_format}.")
 
   def _func(x: jnp.ndarray) -> jnp.ndarray:
     return jax.lax.reduce_window(
@@ -1832,7 +1840,6 @@ class _XlaReduceWindow(_HigherOrderFunction):
       computation: Callable[..., Any],
   ):
     # Pattern matching computations that can be specialized.
-    # TODO(shaobohou) Support jax.lax.add.
     primitives = {
         jax.lax.max_p: jax.lax.max,
         jax.lax.min_p: jax.lax.min,
