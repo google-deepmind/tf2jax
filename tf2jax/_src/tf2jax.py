@@ -879,8 +879,8 @@ def _matrix_diag(proto):
       diag_fn = jax.vmap(diag_fn)
 
     outputs = diag_fn(diagonals)
-    paddings = jnp.ones_like(outputs) - diag_fn(jnp.ones_like(diagonals))
-    return outputs + paddings * padding_value
+    mask = diag_fn(jnp.ones_like(diagonals, dtype=jnp.bool_))
+    return jnp.where(mask, outputs, padding_value)
 
   return _func
 
