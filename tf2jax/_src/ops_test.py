@@ -1440,6 +1440,24 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
       self.assertNotAllClose(samples, diff_samples)
 
   @chex.variants(with_jit=True, without_jit=True)
+  @parameterized.named_parameters(
+      ("slice0", lambda x: x[2:, :, :, :3]),
+      ("slice1", lambda x: x[1:-2, ..., :3:2]),
+      ("slice2", lambda x: x[..., 1:-2, :3:2]),
+      ("slice3", lambda x: x[1:-2, :-2:2, ...]),
+      ("newaxis0", lambda x: x[tf.newaxis, ...]),
+      ("newaxis1", lambda x: x[..., tf.newaxis, 2:5]),
+      ("newaxis2", lambda x: x[:4, tf.newaxis, ..., :2]),
+      ("shrink0", lambda x: x[..., 2, 3]),
+      ("shrink1", lambda x: x[2:, 3, :, 5]),
+      ("mixed0", lambda x: x[..., 4:1:-1, tf.newaxis, 3]),
+  )
+  def test_strided_slice(self, slice_fn):
+    inputs = np.linspace(0., 1., 4 * 5 * 6 * 7).astype(np.float32)
+    inputs = inputs.reshape((4, 5, 6, 7))
+    self._test_convert(slice_fn, inputs)
+
+  @chex.variants(with_jit=True, without_jit=True)
   def test_sum(self):
     inputs = np.array(np.reshape(range(120), (5, 4, 3, 2)), dtype=np.int32)
 

@@ -1534,7 +1534,7 @@ def _strided_slice(proto):
         dim += inserted
       else:
         if shrink_axis_mask[idx] == 1:
-          slices.append(begin[dim])
+          slices.append(begin[idx])
         else:
           beg_dim = begin[idx] if begin_mask[idx] == 0 else None
           end_dim = end[idx] if end_mask[idx] == 0 else None
