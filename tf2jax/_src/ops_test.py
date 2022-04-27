@@ -1592,6 +1592,15 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
     self.assertEqual(jax_result, ())
     self.assertAllClose(jax_params["blah"], acc_var)
 
+  @chex.variants(with_jit=True, without_jit=True)
+  def test_top_k(self):
+    inputs = np.array([range(10), range(10)[::-1]], dtype=np.float32)
+    k = tf.constant(5, dtype=tf.int32)
+
+    def top_k(x):
+      return tf.raw_ops.TopKV2(input=x, k=k, sorted=True)
+    self._test_convert(top_k, inputs)
+
 
 if __name__ == "__main__":
   tf.test.main()
