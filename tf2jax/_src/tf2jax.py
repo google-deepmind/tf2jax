@@ -35,6 +35,7 @@ import tree
 
 # Import usage logging here.
 
+from tensorflow.python.framework import op_def_registry  # pylint: disable=no-name-in-module
 from tensorflow.python.framework import ops as tf_ops  # pylint: disable=no-name-in-module
 
 
@@ -2013,15 +2014,50 @@ class _TensorEdge(NamedTuple):
   is_control: bool = False
 
   @classmethod
-  def from_string(cls, op_str: str):
+  def from_string(
+      cls,
+      op_str: str,
+      node_map: Optional[Mapping[str, Any]] = None,
+  ):
+    """Parse a NodeDef input string."""
+    node_map = node_map or {}
+
     is_control = op_str.startswith("^")
     if is_control:
       op_str = op_str[1:]
 
     args = op_str.split(":")
-    args = args[::2] if len(args) == 3 else args
-    op_name, idx = args + ["0"] if len(args) == 1 else args
-    return cls(op_name=op_name, idx=int(idx), is_control=is_control)
+
+    if len(args) == 1:
+      op_name, = args
+      output_name = ""
+      idx = 0
+    elif len(args) == 2:
+      op_name, idx = args
+      output_name = ""
+      idx = int(idx)
+    elif len(args) == 3:
+      op_name, output_name, idx = args
+      op_def = op_def_registry.get(node_map[op_name].op)
+      assert op_def.output_arg
+
+      if len(op_def.output_arg) == 1:
+        idx = int(idx)
+      else:
+        found_sequence_args = any([
+            arg.number_attr or arg.type_list_attr for arg in op_def.output_arg
+        ])
+        if idx != "0" or found_sequence_args:
+          raise ValueError(
+              "Only zero index and single tensors are supported for multiple "
+              "output args.\n"
+              f"op_str={op_str}\n"
+              f"op_def={op_def}")
+        idx = [arg.name for arg in op_def.output_arg].index(output_name)
+    else:
+      raise ValueError(f"Invalid input spec string: `{op_str}`")
+
+    return cls(op_name=op_name, idx=idx, is_control=is_control)
 
 
 _tf_assign_ops = {
@@ -2072,7 +2108,8 @@ def _unbox_named_args(
 class _OpNode:
   """Represents an Op."""
 
-  def __init__(self, proto, library: Mapping[str, _LibraryFunction]):
+  def __init__(self, proto, library: Mapping[str, _LibraryFunction],
+               node_map: Mapping[str, Any]):
     self.jax_func = _jax_ops[proto.op](proto)
     self.op = proto.op
     self.name = proto.name
@@ -2081,7 +2118,7 @@ class _OpNode:
     if isinstance(self.jax_func, _HigherOrderFunction):
       self.inner_fns = self.jax_func.get_inner_functions(library)
 
-    inputs = [_TensorEdge.from_string(inp) for inp in proto.input]
+    inputs = [_TensorEdge.from_string(inp, node_map) for inp in proto.input]
     self.control_inputs = tuple([inp for inp in inputs if inp.is_control])
     self.inputs = tuple([inp for inp in inputs if not inp.is_control])
 
@@ -2124,16 +2161,17 @@ class _OpNode:
     return message
 
 
+def _parse_input(op_str: str) -> str:
+  # Parses an input name in tf.NodeDef. This extracts the node name, removes
+  # the control character and the output tensor index e.g. ^Sin:0 -> Sin
+  return op_str.split(":")[0].split("^")[-1]
+
+
 def _toposort(
     nodes: Mapping[str, tf.compat.v1.NodeDef],
     end_node_names: Tuple[str, ...],
 ):
   """Topological sorting of nodes."""
-
-  def parse_input(v):
-    # Parses an input name in tf.NodeDef. This extracts the node name, removes
-    # the control character and the output tensor index e.g. ^Sin:0 -> Sin
-    return v.split(":")[0].split("^")[-1]
 
   child_counts = {}
   stack = list(end_node_names)
@@ -2144,7 +2182,7 @@ def _toposort(
     else:
       child_counts[node_name] = 1
       node = nodes[node_name]
-      stack.extend([parse_input(v) for v in node.input])
+      stack.extend([_parse_input(v) for v in node.input])
   for node_name in end_node_names:
     child_counts[node_name] -= 1
 
@@ -2159,7 +2197,7 @@ def _toposort(
     node_name = childless_nodes.pop()
     node = nodes[node_name]
     sorted_nodes.append(node)
-    for parent in [parse_input(v) for v in node.input]:
+    for parent in [_parse_input(v) for v in node.input]:
       if child_counts[parent] == 1:
         childless_nodes.append(parent)
       else:
@@ -2441,8 +2479,12 @@ class _Subgraph(NamedTuple):
           self.subgraph, named_args, self.output_node.inputs + grad_inputs)
       assert len(args) == len(self.unique_inputs)
       for inp, val in zip(self.unique_inputs, args):
-        if isinstance(eval_cache.outputs[inp.op_name], (list, tuple)):
+        if isinstance(eval_cache.outputs[inp.op_name], list):
           eval_cache.outputs[inp.op_name][inp.idx] = val
+        elif isinstance(eval_cache.outputs[inp.op_name], tuple):
+          old_outputs = eval_cache.outputs[inp.op_name]
+          eval_cache.outputs[inp.op_name] = (
+              old_outputs[:inp.idx] + (val,) + old_outputs[inp.idx + 1:])
         else:
           eval_cache.outputs[inp.op_name] = val
 
@@ -2726,7 +2768,7 @@ def _convert(
                      "as-needed basis, please contact the library owner(s).")
 
   # Extract variables.
-  variables_tf = {v.name.split(":")[0]: v for _, v in variable_map.items()}
+  variables_tf = {_parse_input(v.name): v for _, v in variable_map.items()}
   if tf.executing_eagerly():
     variables = {
         k: Variable(v.numpy(), v.trainable, v.name)
@@ -2740,7 +2782,7 @@ def _convert(
           lambda var, arr: Variable(arr, var.trainable, var.name),
           variables_tf, variables_np)
 
-  var_by_node = {k: v.name.split(":")[0] for k, v in variable_map.items()}
+  var_by_node = {k: _parse_input(v.name) for k, v in variable_map.items()}
   node_by_var = {v: k for k, v in var_by_node.items()}
 
   node_map = {n.name: n for n in graphdef.node}
@@ -2756,7 +2798,8 @@ def _convert(
         assign_nodes)
 
   nodes = _toposort(node_map, output_names)
-  nodes = [_OpNode(node, library) for node in nodes]
+  nodes = [_OpNode(node, library, node_map) for node in nodes]
+  output_args = [_TensorEdge.from_string(v, node_map) for v in output_names]
   num_rng_required = sum([node.require_rng for node in nodes])
 
   if get_config("infer_relu_from_jax2tf"):
@@ -2828,7 +2871,6 @@ def _convert(
     full_inputs = inputs + tuple(
         [all_params[var_by_node.get(v, v)] for v in captured_input_names])
     full_inputs = list(zip(input_names + captured_input_names, full_inputs))
-    outputs = [_TensorEdge(*v.split(":")) for v in output_names]
 
     if num_rng_required:
       rng_keys = list(jax.random.split(rng, num_rng_required))
@@ -2836,7 +2878,7 @@ def _convert(
       rng_keys = []
 
     updated_param_names = set()
-    eval_cache = _EvaluationCache(nodes, full_inputs, outputs)
+    eval_cache = _EvaluationCache(nodes, full_inputs, output_args)
     for node in nodes:
       if node.name not in eval_cache.outputs:
         # Double-check control inputs.
@@ -2857,7 +2899,7 @@ def _convert(
 
         eval_cache.free_inputs(node)
 
-    flat_outputs = tuple([eval_cache.outputs[k.op_name] for k in outputs])
+    flat_outputs = tuple([eval_cache.outputs[k.op_name] for k in output_args])
     flat_outputs = [v for v in flat_outputs if v is not _EMPTY_RETURN_VALUE]
     collected_outputs = tree.unflatten_as(structured_outputs, flat_outputs)
 
