@@ -28,9 +28,9 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import tensorflow as tf
-from tf2jax._src import jax_utils as ops
 from tf2jax._src import numpy_compat as anp
 from tf2jax._src import utils
+from tf2jax._src import xla_utils
 import tree
 
 # Import usage logging here.
@@ -442,13 +442,13 @@ def _conv2d(proto):
   data_format = str(proto.attr["data_format"].s, "utf-8")
   if data_format == "NHWC":
     dimension_numbers = ("NHWC", "HWIO", "NHWC")
-    strides = ops.get_conv_sequence(strides, ndim=2, channel_index=-1)
-    dilations = ops.get_conv_sequence(dilations, ndim=2, channel_index=-1)
+    strides = xla_utils.get_conv_sequence(strides, ndim=2, channel_index=-1)
+    dilations = xla_utils.get_conv_sequence(dilations, ndim=2, channel_index=-1)
     feature_group_count_fn = lambda lhs, rhs: lhs.shape[3] // rhs.shape[2]
   elif data_format == "NCHW":
     dimension_numbers = ("NCHW", "HWIO", "NCHW")
-    strides = ops.get_conv_sequence(strides, ndim=2, channel_index=1)
-    dilations = ops.get_conv_sequence(dilations, ndim=2, channel_index=1)
+    strides = xla_utils.get_conv_sequence(strides, ndim=2, channel_index=1)
+    dilations = xla_utils.get_conv_sequence(dilations, ndim=2, channel_index=1)
     feature_group_count_fn = lambda lhs, rhs: lhs.shape[1] // rhs.shape[2]
   else:
     raise ValueError(f"Found unsupported data format {data_format}.")
@@ -489,12 +489,12 @@ def _conv2d_backprop_input(proto):
   data_format = str(proto.attr["data_format"].s, "utf-8")
   if data_format == "NHWC":
     dimension_numbers = ("NHWC", "HWIO", "NHWC")
-    strides = ops.get_conv_sequence(strides, ndim=2, channel_index=-1)
-    dilations = ops.get_conv_sequence(dilations, ndim=2, channel_index=-1)
+    strides = xla_utils.get_conv_sequence(strides, ndim=2, channel_index=-1)
+    dilations = xla_utils.get_conv_sequence(dilations, ndim=2, channel_index=-1)
   elif data_format == "NCHW":
     dimension_numbers = ("NCHW", "HWIO", "NCHW")
-    strides = ops.get_conv_sequence(strides, ndim=2, channel_index=1)
-    dilations = ops.get_conv_sequence(dilations, ndim=2, channel_index=1)
+    strides = xla_utils.get_conv_sequence(strides, ndim=2, channel_index=1)
+    dilations = xla_utils.get_conv_sequence(dilations, ndim=2, channel_index=1)
   else:
     raise ValueError(f"Found unsupported data format {data_format}.")
 
@@ -564,15 +564,15 @@ def _depthwise_conv2d(proto):
     if explicit_paddings:
       padding = padding[1:3]
     dimension_numbers = ("NHWC", "HWIO", "NHWC")
-    strides = ops.get_conv_sequence(strides, ndim=2, channel_index=-1)
-    dilations = ops.get_conv_sequence(dilations, ndim=2, channel_index=-1)
+    strides = xla_utils.get_conv_sequence(strides, ndim=2, channel_index=-1)
+    dilations = xla_utils.get_conv_sequence(dilations, ndim=2, channel_index=-1)
     channel_index = -1
   elif data_format == "NCHW":
     if explicit_paddings:
       padding = padding[2:]
     dimension_numbers = ("NCHW", "HWIO", "NCHW")
-    strides = ops.get_conv_sequence(strides, ndim=2, channel_index=1)
-    dilations = ops.get_conv_sequence(dilations, ndim=2, channel_index=1)
+    strides = xla_utils.get_conv_sequence(strides, ndim=2, channel_index=1)
+    dilations = xla_utils.get_conv_sequence(dilations, ndim=2, channel_index=1)
     channel_index = 1
   else:
     raise ValueError(f"Found unsupported data format {data_format}.")
@@ -1610,9 +1610,9 @@ def _xla_conv(proto):
           "precision_config", "preferred_element_type", "batch_group_count"
       })
 
-  dimension_numbers = ops.convolution_dimension_numbers_from_proto(
+  dimension_numbers = xla_utils.convolution_dimension_numbers_from_proto(
       proto.attr["dimension_numbers"].s)
-  precision_config = ops.precision_config_from_proto(
+  precision_config = xla_utils.precision_config_from_proto(
       proto.attr["precision_config"].s)
   batch_group_count = proto.attr["batch_group_count"].i
   if "preferred_element_type" in proto.attr:
@@ -1656,9 +1656,9 @@ def _xla_dot(proto):
           "preferred_element_type"
       })
 
-  dimension_numbers = ops.dot_dimension_numbers_from_proto(
+  dimension_numbers = xla_utils.dot_dimension_numbers_from_proto(
       proto.attr["dimension_numbers"].s)
-  precision_config = ops.precision_config_from_proto(
+  precision_config = xla_utils.precision_config_from_proto(
       proto.attr["precision_config"].s)
   if "preferred_element_type" in proto.attr:
     dst_dtype = tf.as_dtype(proto.attr["preferred_element_type"].type)
@@ -1697,7 +1697,7 @@ def _xla_gather(proto):
   _check_attrs(proto,
                {"T", "Tindices", "dimension_numbers", "indices_are_sorted"})
 
-  dimension_numbers = ops.gather_dimension_numbers_from_proto(
+  dimension_numbers = xla_utils.gather_dimension_numbers_from_proto(
       proto.attr["dimension_numbers"].s)
   # This should exist on the XLA op, even though it's not exposed by JAX.
   indices_are_sorted = proto.attr["indices_are_sorted"].b
@@ -1886,6 +1886,33 @@ def _xla_reduce_window(proto):
   return _XlaReduceWindow(dict(computation=computation))
 
 
+@register_operation("XlaRngBitGenerator")
+def _xla_rng_bit_generator(proto):
+  """Parse a XlaRngBitGenerator op."""
+  _check_attrs(proto, {"Tshape", "dtype"})
+
+  dtype = tf.as_dtype(proto.attr["dtype"].type)
+  jax_dtype = anp.get_jax_dtype(dtype)
+  if jax_dtype != jnp.uint32:
+    raise ValueError(
+        f"XlaRngBitGenerator currently only supports uint32, found{jax_dtype}.")
+
+  def _func(
+      algorithm: jnp.ndarray,
+      key: jnp.ndarray,
+      shape: jnp.ndarray,
+  ) -> Tuple[jnp.ndarray, jnp.ndarray]:
+    return jax.lax.rng_bit_generator(
+        key=key.reshape(-1),
+        shape=shape,
+        dtype=jax_dtype,
+        # See tensorflow/compiler/tf2xla/ops/xla_ops.cc#L812
+        algorithm=xla_utils.get_random_algorithm_from_tf(algorithm.tolist()),
+    )
+
+  return _func
+
+
 @dataclasses.dataclass
 class _XlaScatter(_HigherOrderFunction):
   """Represents a XlaScatter Op."""
@@ -1934,7 +1961,7 @@ def _xla_scatter(proto):
           "update_computation"
       })
 
-  dimension_numbers = ops.scatter_dimension_numbers_from_proto(
+  dimension_numbers = xla_utils.scatter_dimension_numbers_from_proto(
       proto.attr["dimension_numbers"].s)
   update_computation = proto.attr["update_computation"].func.name
   indices_are_sorted = proto.attr["indices_are_sorted"].b

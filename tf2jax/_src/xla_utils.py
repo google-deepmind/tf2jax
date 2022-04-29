@@ -17,6 +17,7 @@
 from typing import Optional, Sequence, Union
 
 import jax
+import tensorflow as tf
 
 # TODO(shaobohou) Is there a non-direct alias?
 from tensorflow.compiler.xla import xla_data_pb2  # pytype: disable=import-error
@@ -94,3 +95,17 @@ def precision_config_from_proto(
     precision_config = tuple(precision_config)
 
   return precision_config
+
+
+def get_random_algorithm_from_tf(
+    algorithm: int) -> xla_data_pb2.RandomAlgorithm:
+  """Map tf random algorithm enum to XLA random algorithm enum."""
+  algorithm_map = {
+      tf.random.Algorithm.PHILOX.value:
+          xla_data_pb2.RandomAlgorithm.RNG_PHILOX,
+      tf.random.Algorithm.THREEFRY.value:
+          xla_data_pb2.RandomAlgorithm.RNG_THREE_FRY,
+      tf.random.Algorithm.AUTO_SELECT.value:
+          xla_data_pb2.RandomAlgorithm.RNG_DEFAULT,
+  }
+  return algorithm_map[algorithm]

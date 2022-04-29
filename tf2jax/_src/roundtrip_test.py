@@ -28,6 +28,8 @@ import tensorflow as tf
 from tf2jax._src import tf2jax
 import tree
 
+from tensorflow.compiler.xla import xla_data_pb2  # pytype: disable=import-error
+
 # Parse absl flags test_srcdir and test_tmpdir.
 jax.config.parse_flags_with_absl()
 
@@ -427,6 +429,32 @@ class Jax2TfTest(parameterized.TestCase, tf.test.TestCase):
     inputs = np.random.normal(size=(8, 28, 28, 3))
     self._test_convert(
         forward, [inputs], with_grad=with_grad, enable_xla=enable_xla)
+
+  @chex.variants(with_jit=True)
+  @parameterized.named_parameters(
+      chex.params_product(
+          (("without_gradient", False),),
+          (("enable_xla", True),),
+          (("uint32", np.uint32),),
+          (
+              ("default", xla_data_pb2.RandomAlgorithm.RNG_DEFAULT),
+              ("threefry", xla_data_pb2.RandomAlgorithm.RNG_THREE_FRY),
+              ("philox", xla_data_pb2.RandomAlgorithm.RNG_PHILOX),
+          ),
+          named=True,
+      ))
+  def test_rng_bit_generator(self, with_grad, enable_xla, dtype, algorithm):
+    def forward(key):
+      return jax.lax.rng_bit_generator(
+          key, shape=(10, 5), dtype=dtype, algorithm=algorithm)
+
+    if dtype == np.uint32:
+      key = np.array([6, 7, 8, 9], dtype=np.uint32)
+    else:
+      raise ValueError(f"Unsupported dtype={dtype}")
+
+    self._test_convert(
+        forward, [key], with_grad=with_grad, enable_xla=enable_xla)
 
   @chex.variants(with_jit=True)
   @parameterized.named_parameters(
