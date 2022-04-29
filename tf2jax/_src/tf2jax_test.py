@@ -50,10 +50,9 @@ class ModelsTest(tf.test.TestCase, parameterized.TestCase):
 
   @chex.variants(with_jit=True, without_jit=True)
   def test_mlp(self):
-    np.random.seed(42)
     tf.random.set_seed(42)
 
-    inputs = np.random.normal(size=(128, 16)).astype(np.float32)
+    inputs = np.linspace(-1., 1., 128 * 16, dtype=np.float32).reshape((128, 16))
 
     model = snt.nets.MLP((64, 10,))
     def tf_func(x):
@@ -69,10 +68,10 @@ class ModelsTest(tf.test.TestCase, parameterized.TestCase):
           named=True,
       ))
   def test_resnet(self, training):
-    np.random.seed(42)
     tf.random.set_seed(42)
 
-    inputs = np.random.normal(size=(10, 128, 128, 3)).astype(np.float32)
+    inputs = np.linspace(
+        -1., 1., 2 * 64 * 64 * 3, dtype=np.float32).reshape((2, 64, 64, 3))
 
     model = snt.nets.ResNet([1, 1, 1, 1], 10)
     def tf_func(x):
@@ -88,10 +87,10 @@ class ModelsTest(tf.test.TestCase, parameterized.TestCase):
           named=True,
       ))
   def test_vqvae(self, training):
-    np.random.seed(42)
     tf.random.set_seed(42)
 
-    inputs = np.random.normal(size=(10, 128, 128, 3)).astype(np.float32)
+    inputs = np.linspace(
+        -1., 1., 2 * 64 * 64 * 3, dtype=np.float32).reshape((2, 64, 64, 3))
 
     model = snt.nets.VectorQuantizer(3, 100, 0.1)
     def tf_func(x):
