@@ -2319,6 +2319,13 @@ def _fix_tfhub_specs(
   return structured_specs
 
 
+def _maybe_tracer_to_tf_spec(val: Any) -> Any:
+  if isinstance(val, jax.core.Tracer):
+    return tf.TensorSpec(shape=val.shape, dtype=val.dtype)
+  else:
+    return val
+
+
 def convert(
     tf_func: Any,  # tensorflow.python.eager.function is not visible.
     *args,
@@ -2343,6 +2350,7 @@ def convert(
   """
 # Log usage here.
 
+  args, kwargs = tree.map_structure(_maybe_tracer_to_tf_spec, (args, kwargs))
   try:
     concrete_func = tf_func.get_concrete_function(*args, **kwargs)
   except AttributeError:

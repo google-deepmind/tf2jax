@@ -758,6 +758,21 @@ class Jax2TfTest(parameterized.TestCase, tf.test.TestCase):
         "Gradient only defined for scalar-output functions. Output was ()."):
       jax.grad(re_jax_forward)(inputs)
 
+  @chex.variants(with_jit=True, without_jit=True)
+  def test_jax2tf_nesting(self):
+    @tf.function
+    def tf_fn(x):
+      return tf.cos(x)
+
+    def tf2jax_fn(x):
+      jax_fn = tf2jax.convert_functional(tf_fn, x)
+      return jnp.sin(self.variant(jax_fn)(x))
+
+    tf2jax2tf_fn = jax2tf.convert(tf2jax_fn)
+
+    inputs = np.linspace(-1., 1., 6, dtype=np.float32).reshape((2, 3))
+    self.assertAllClose(tf.sin(tf_fn(inputs)), tf2jax2tf_fn(inputs))
+
 
 if __name__ == "__main__":
   absltest.main()

@@ -422,6 +422,20 @@ class FeaturesTest(tf.test.TestCase, parameterized.TestCase):
 
     self.assertAllClose(tf_outputs, jax_outputs)
 
+  @chex.variants(with_jit=True, without_jit=True)
+  def test_jit_nesting(self):
+    @tf.function
+    def tf_fn(x):
+      return tf.cos(x)
+
+    @jax.jit
+    def tf2jax_fn(x):
+      jax_fn = tf2jax.convert_functional(tf_fn, x)
+      return jnp.sin(self.variant(jax_fn)(x))
+
+    inputs = np.linspace(-1., 1., 6, dtype=np.float32).reshape((2, 3))
+    self.assertAllClose(tf.sin(tf_fn(inputs)), tf2jax_fn(inputs))
+
 
 if __name__ == "__main__":
   tf.test.main()
