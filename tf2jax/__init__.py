@@ -23,7 +23,7 @@ from tf2jax._src.tf2jax import get_config
 from tf2jax._src.tf2jax import override_config
 from tf2jax._src.tf2jax import update_config
 
-__version__ = "0.1.1"
+__version__ = "0.2.0"
 
 #  _________________________________________
 # / Please don't use symbols in `_src` they \
