@@ -19,7 +19,6 @@ import itertools
 from typing import Sequence, Union
 
 import jax
-from jax.experimental import jax2tf
 import jax.numpy as jnp
 import numpy as np
 import tensorflow as tf
@@ -65,8 +64,12 @@ tf_to_jnp_dtypes = {
 _NP_LIKES = (np.ndarray, np.number, np.bool_, bool, int, float)
 
 
+# We avoids importing jax2tf.shape_poly.is_poly_dim as jax2tf often depends
+# on the most recent tensorflow version.
 def _is_poly_dim(x):
-  return jax2tf.shape_poly.is_poly_dim(x)
+  cls = type(x)
+  return (cls.__module__ == "jax.experimental.jax2tf.shape_poly" and
+          cls.__name__ == "_DimPolynomial")
 
 
 def _get_np(*args):
@@ -118,7 +121,7 @@ def arange(start, stop, step, dtype: tf.DType):
 
 
 def asarray(arr, dtype: tf.DType):
-  if jax2tf.shape_poly.is_poly_dim(arr):
+  if _is_poly_dim(arr):
     arr = jax.core.dimension_as_value(arr)
   dtype = _get_dtypes(arr)[dtype]
   return _get_np(arr).asarray(arr, dtype)
