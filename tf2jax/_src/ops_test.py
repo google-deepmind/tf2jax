@@ -290,18 +290,25 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
   @parameterized.named_parameters(
       chex.params_product(
           (("NHWC", "NHWC"), ("NCHW", "NCHW")),
+          (
+              ("three_dims", (32, 16, 8)),
+              ("four_dims", (3, 32, 16, 8)),
+              ("five_dims", (2, 3, 32, 16, 8)),
+          ),
           named=True,
       ))
-  def test_bias_add(self, data_format):
+  def test_bias_add(self, data_format, input_shape):
     np.random.seed(42)
 
-    inputs = np.random.normal(size=(10, 32, 16, 8)).astype(np.float32)
-    bias = np.linspace(-1., 1., 8).astype(np.float32)
-
     if data_format == "NCHW":
-      inputs = np.transpose(inputs, [0, 3, 1, 2])
+      nchannels = input_shape[1]
+    elif data_format == "NHWC":
+      nchannels = input_shape[-1]
     else:
-      assert data_format == "NHWC"
+      raise ValueError(f"Unsupported format {data_format}")
+
+    inputs = np.random.normal(size=input_shape).astype(np.float32)
+    bias = bias = np.linspace(-1., 1., nchannels).astype(np.float32)
 
     def pool(x, b):
       return tf.raw_ops.BiasAdd(value=x, bias=b, data_format=data_format)

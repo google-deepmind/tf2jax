@@ -305,9 +305,10 @@ def _bias_add(proto):
 
   data_format = str(proto.attr["data_format"].s, "utf-8")
   if data_format == "NHWC":
-    reduce_axis = (0, 1, 2)
+    expand_axis_fn = lambda x: [d for d in range(x.ndim) if d != x.ndim - 1]
   elif data_format == "NCHW":
-    reduce_axis = (0, 2, 3)
+    # TODO(shaobohou) this seems wrong but matches TF behaviour.
+    expand_axis_fn = lambda x: [d for d in range(x.ndim) if d != 1]
   else:
     raise ValueError(f"Found unsupported data format {data_format}.")
 
@@ -315,7 +316,7 @@ def _bias_add(proto):
     if bias.ndim != 1:
       raise ValueError(
           f"Expected `bias` as a 1D array, found array with {bias.ndim} dims.")
-    bias = anp.expand_dims(bias, axis=reduce_axis)
+    bias = anp.expand_dims(bias, axis=expand_axis_fn(value))
     return anp.add(value, bias)
 
   return _func
