@@ -23,6 +23,7 @@ import jax
 import numpy as np
 
 import tensorflow as tf
+from tf2jax._src import ops
 from tf2jax._src import tf2jax
 import tree
 
@@ -37,6 +38,11 @@ def _nullcontext(enter_result=None):
 
 
 class OpsTest(tf.test.TestCase, parameterized.TestCase):
+
+  def test_get_unsupported(self):
+    unsupported = ops.get_unsupported_operations(
+        ["Add", "Relu", "NotAnOp", "Blah", "Relu"])
+    self.assertEqual(unsupported, {"NotAnOp", "Blah"})
 
   def _assert_if_jitted(self, err):
     jitted = self.variant.type == chex.ChexVariantType.WITH_JIT

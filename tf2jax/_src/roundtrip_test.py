@@ -25,6 +25,7 @@ import jax.numpy as jnp
 
 import numpy as np
 import tensorflow as tf
+from tf2jax._src import config
 from tf2jax._src import tf2jax
 import tree
 
@@ -68,7 +69,7 @@ class Jax2TfTest(parameterized.TestCase, tf.test.TestCase):
     jax.tree_map(self.assertAllClose, jax_outputs, tf_outputs)
 
     # Jax -> TF -> Jax
-    with tf2jax.override_config("convert_custom_gradient", with_custom_grad):
+    with config.override_config("convert_custom_gradient", with_custom_grad):
       rejax_func = tf2jax.convert_functional(
           tf.function(tf_func), *tree.map_structure(np.zeros_like, inputs))
     rejax_func = self.variant(rejax_func)
@@ -90,7 +91,7 @@ class Jax2TfTest(parameterized.TestCase, tf.test.TestCase):
     jax.tree_map(self.assertAllClose, jax_outputs, restored_tf_outputs)
 
     # Jax -> TF -> SavedModel -> TF -> Jax
-    with tf2jax.override_config("convert_custom_gradient", with_custom_grad):
+    with config.override_config("convert_custom_gradient", with_custom_grad):
       rejax_too_func = tf2jax.convert_functional(
           restored.f, *tree.map_structure(np.zeros_like, inputs))
     rejax_too_func = self.variant(rejax_too_func)
@@ -616,7 +617,7 @@ class Jax2TfTest(parameterized.TestCase, tf.test.TestCase):
     tf_forward = tf.function(tf_forward)
 
     # JAX -> TF -> JAX
-    with tf2jax.override_config("convert_custom_gradient", True):
+    with config.override_config("convert_custom_gradient", True):
       jax_forward = tf2jax.convert_functional(tf_forward,
                                               tf.zeros_like(inputs))
     jax_forward = self.variant(jax_forward)
@@ -634,7 +635,7 @@ class Jax2TfTest(parameterized.TestCase, tf.test.TestCase):
     restored = tf.saved_model.load(tmp_dir.full_path)
 
     # Jax -> TF -> SavedModel -> TF -> Jax
-    with tf2jax.override_config("convert_custom_gradient", True):
+    with config.override_config("convert_custom_gradient", True):
       re_jax_forward = tf2jax.convert_functional(restored.f,
                                                  tf.zeros_like(inputs))
     re_jax_forward = self.variant(re_jax_forward)
@@ -678,7 +679,7 @@ class Jax2TfTest(parameterized.TestCase, tf.test.TestCase):
     tf_fn_too = tf.function(tf_fn_too)
 
     # JAX -> TF -> CALL_TF -> TF -> JAX
-    with tf2jax.override_config("convert_custom_gradient", True):
+    with config.override_config("convert_custom_gradient", True):
       jax_fn_too = tf2jax.convert_functional(tf_fn_too, np.zeros_like(inputs))
 
     jax_outputs = jax_fn_too(inputs)
@@ -729,7 +730,7 @@ class Jax2TfTest(parameterized.TestCase, tf.test.TestCase):
     tf_forward = tf.function(tf_forward)
 
     # JAX -> TF -> JAX
-    with tf2jax.override_config("convert_custom_gradient", True):
+    with config.override_config("convert_custom_gradient", True):
       jax_forward = tf2jax.convert_functional(tf_forward,
                                               tf.zeros_like(inputs))
       jax_forward = self.variant(jax_forward)
@@ -748,7 +749,7 @@ class Jax2TfTest(parameterized.TestCase, tf.test.TestCase):
     restored = tf.saved_model.load(tmp_dir.full_path)
 
     # Jax -> TF -> SavedModel -> TF -> Jax
-    with tf2jax.override_config("convert_custom_gradient", True):
+    with config.override_config("convert_custom_gradient", True):
       re_jax_forward = tf2jax.convert_functional(restored.f,
                                                  tf.zeros_like(inputs))
       re_jax_forward = self.variant(re_jax_forward)

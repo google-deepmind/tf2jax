@@ -24,6 +24,7 @@ import numpy as np
 
 import sonnet as snt
 import tensorflow as tf
+from tf2jax._src import config
 from tf2jax._src import tf2jax
 import tree
 
@@ -133,7 +134,7 @@ class FeaturesTest(tf.test.TestCase, parameterized.TestCase):
 
       test_inputs = np.ones([20, 5], dtype=np.float32)
       expected_outputs = tf_func(test_inputs)
-      with tf2jax.override_config("strict_shape_check", False):
+      with config.override_config("strict_shape_check", False):
         actual_outputs, _ = jax_func({}, test_inputs)
       self.assertAllClose(expected_outputs, actual_outputs)
 
@@ -150,7 +151,7 @@ class FeaturesTest(tf.test.TestCase, parameterized.TestCase):
 
     test_inputs = np.ones([20, 7, 2], dtype=np.float32)
     expected_outputs = tf_func(test_inputs)
-    with tf2jax.override_config("strict_shape_check", False):
+    with config.override_config("strict_shape_check", False):
       actual_outputs, _ = jax_func({}, test_inputs)
     self.assertAllClose(expected_outputs, actual_outputs)
 
@@ -164,7 +165,7 @@ class FeaturesTest(tf.test.TestCase, parameterized.TestCase):
 
     test_inputs = np.ones([20, 5], dtype=np.float32)
     expected_outputs = tf_func(test_inputs)
-    with tf2jax.override_config("strict_shape_check", False):
+    with config.override_config("strict_shape_check", False):
       actual_outputs = jax_func(test_inputs)
     self.assertAllClose(expected_outputs, actual_outputs)
 
@@ -200,30 +201,30 @@ class FeaturesTest(tf.test.TestCase, parameterized.TestCase):
 
     with self.subTest("valid_input_shape"):
       expected_outputs = tf_func(orig_inputs)
-      with tf2jax.override_config("strict_shape_check", True):
+      with config.override_config("strict_shape_check", True):
         actual_outputs = jax_func(orig_inputs)
         self.assertAllClose(expected_outputs, actual_outputs)
-      with tf2jax.override_config("strict_dtype_check", True):
+      with config.override_config("strict_dtype_check", True):
         actual_outputs = jax_func(orig_inputs)
         self.assertAllClose(expected_outputs, actual_outputs)
 
     test_inputs = np.ones([10, 5, 2], dtype=np.float32)
     with self.subTest("invalid_input_shape"):
       expected_outputs = tf_func(test_inputs)
-      with tf2jax.override_config("strict_shape_check", True):
+      with config.override_config("strict_shape_check", True):
         with self.assertRaisesRegex(ValueError, "incompatible input shape"):
           actual_outputs = jax_func(test_inputs)
-      with tf2jax.override_config("strict_shape_check", False):
+      with config.override_config("strict_shape_check", False):
         actual_outputs = jax_func(test_inputs)
         self.assertNotAllClose(expected_outputs, actual_outputs)
 
     test_inputs = np.ones([10, 5], dtype=np.int32)
     with self.subTest("invalid_input_dtype"):
       expected_outputs = tf_func(test_inputs)
-      with tf2jax.override_config("strict_dtype_check", True):
+      with config.override_config("strict_dtype_check", True):
         with self.assertRaisesRegex(ValueError, "incompatible input dtype"):
           actual_outputs = jax_func(test_inputs)
-      with tf2jax.override_config("strict_dtype_check", False):
+      with config.override_config("strict_dtype_check", False):
         actual_outputs = jax_func(test_inputs)
         self.assertAllClose(expected_outputs, actual_outputs)
 
@@ -246,7 +247,7 @@ class FeaturesTest(tf.test.TestCase, parameterized.TestCase):
                          "force_const_float64_to_bfloat16")
 
     # This is the default.
-    with tf2jax.override_config(dtype_config_name, False):
+    with config.override_config(dtype_config_name, False):
       jax_func = tf2jax.convert_functional(tf_func, np_inputs)
     jax_func = self.variant(jax_func)
     orig_jax_outputs = jax_func(np_inputs)
@@ -255,7 +256,7 @@ class FeaturesTest(tf.test.TestCase, parameterized.TestCase):
         jnp.array(orig_jax_outputs).dtype)
     self.assertAllClose(tf_outputs, orig_jax_outputs)
 
-    with tf2jax.override_config(dtype_config_name, True):
+    with config.override_config(dtype_config_name, True):
       jax_func = tf2jax.convert_functional(tf_func, np_inputs)
     jax_func = self.variant(jax_func)
     forced_jax_outputs = jax_func(jnp.asarray(np_inputs, jnp.bfloat16))
@@ -278,7 +279,7 @@ class FeaturesTest(tf.test.TestCase, parameterized.TestCase):
       def __init__(self):
         super().__init__(name=None)
         if not self.cache:
-          with tf2jax.override_config("force_const_float32_to_bfloat16", True):
+          with config.override_config("force_const_float32_to_bfloat16", True):
             self.cache.append(jax.jit(
                 tf2jax.convert_functional(tf_func, np_inputs)))
 
@@ -344,7 +345,7 @@ class FeaturesTest(tf.test.TestCase, parameterized.TestCase):
       tf_outputs = tf_func(tf_inputs)
       tf_grads = tape.gradient(tf_outputs, tf_inputs)
 
-    with tf2jax.override_config("convert_custom_gradient", use_custom_gradient):
+    with config.override_config("convert_custom_gradient", use_custom_gradient):
       jax_func = tf2jax.convert_functional(tf_func, np.zeros_like(np_inputs))
     jax_func = self.variant(jax_func)
     jax_outputs = jax_func(np_inputs)
