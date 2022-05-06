@@ -23,7 +23,7 @@ from tf2jax._src.tf2jax import convert_from_restored
 from tf2jax._src.tf2jax import convert_functional
 from tf2jax._src.tf2jax import convert_functional_from_restored
 
-__version__ = "0.2.0"
+__version__ = "0.2.1"
 
 #  _________________________________________
 # / Please don't use symbols in `_src` they \
