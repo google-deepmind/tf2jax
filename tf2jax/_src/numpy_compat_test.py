@@ -23,27 +23,26 @@ import tensorflow as tf
 from tf2jax._src import numpy_compat
 
 _dtypes = [
-    "bool", "uint8", "uint16", "uint32", "uint64", "int8", "int16", "int32",
-    "int64", "float16", "float32", "float64", "complex64", "complex128"
+    tf.bool, tf.uint8, tf.uint16, tf.uint32, tf.uint64, tf.int8, tf.int16,
+    tf.int32, tf.int64, tf.bfloat16, tf.float16, tf.float32, tf.float64,
+    tf.complex64, tf.complex128
 ]
 
 
 class NumpyCompatTest(parameterized.TestCase):
 
-  def test_numpy_dtype_conversion(self):
-    self.assertEqual(len(_dtypes), len(numpy_compat.tf_to_np_dtypes))
+  @parameterized.named_parameters(
+      ("np", np, numpy_compat.tf_to_np_dtypes),
+      ("jnp", jnp, numpy_compat.tf_to_jnp_dtypes),
+  )
+  def test_dtype_conversion(self, np_module, dtype_map):
+    self.assertEqual(len(_dtypes), len(dtype_map))
     for src in _dtypes:
-      dst = "bool_" if src == "bool" else src
-      self.assertEqual(numpy_compat.tf_to_np_dtypes[getattr(tf, src)],
-                       getattr(np, dst))
-
-  def test_jax_dtype_conversion(self):
-    all_dtypes = _dtypes + ["bfloat16"]
-    self.assertEqual(len(all_dtypes), len(numpy_compat.tf_to_jnp_dtypes))
-    for src in all_dtypes:
-      dst = "bool_" if src == "bool" else src
-      self.assertEqual(numpy_compat.tf_to_jnp_dtypes[getattr(tf, src)],
-                       getattr(jnp, dst))
+      dst = "bool_" if src.name == "bool" else src.name
+      if src.name == "bfloat16":
+        self.assertIs(dtype_map[src], jnp.bfloat16)
+      else:
+        self.assertIs(dtype_map[src], getattr(np_module, dst))
 
 
 if __name__ == "__main__":

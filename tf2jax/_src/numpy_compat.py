@@ -34,6 +34,7 @@ tf_to_np_dtypes = {
     tf.int16: np.int16,
     tf.int32: np.int32,
     tf.int64: np.int64,
+    tf.bfloat16: jnp.bfloat16,
     tf.float16: np.float16,
     tf.float32: np.float32,
     tf.float64: np.float64,
