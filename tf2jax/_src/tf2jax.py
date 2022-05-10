@@ -834,12 +834,15 @@ def _convert(
         for k, v in variables_tf.items()
     }
   else:
-    with tf.compat.v1.Session() as sess:
-      sess.run(tf.compat.v1.initialize_variables(variables_tf.values()))
-      variables_np = sess.run(variables_tf)
-      variables = tree.map_structure(
-          lambda var, arr: Variable(arr, var.trainable, var.name),
-          variables_tf, variables_np)
+    if variables_tf:
+      with tf.compat.v1.Session() as sess:
+        sess.run(tf.compat.v1.initialize_variables(variables_tf.values()))
+        variables_np = sess.run(variables_tf)
+        variables = tree.map_structure(
+            lambda var, arr: Variable(arr, var.trainable, var.name),
+            variables_tf, variables_np)
+    else:
+      variables = {}
 
   var_by_node = {k: _parse_input(v.name) for k, v in variable_map.items()}
   node_by_var = {v: k for k, v in var_by_node.items()}
