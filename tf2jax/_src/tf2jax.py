@@ -109,11 +109,11 @@ class _TensorEdge(NamedTuple):
     return cls(op_name=op_name, idx=idx, is_control=is_control)
 
 
-_tf_assign_ops = {
+_TF_ASSIGN_OPS = (
     "AssignAddVariableOp", "AssignSubVariableOp", "AssignVariableOp"
-}
+)
 
-_tf_random_ops = {"RandomStandardNormal", "RandomUniform", "RandomUniformInt"}
+_TF_RANDOM_OPS = ("RandomStandardNormal", "RandomUniform", "RandomUniformInt")
 
 
 class _LibraryFunction(NamedTuple):
@@ -178,7 +178,7 @@ class _OpNode:
   @property
   def require_rng(self) -> bool:
     inner_require_rngs = any([fn.require_rng for fn in self.inner_fns.values()])
-    return self.op in _tf_random_ops or inner_require_rngs
+    return self.op in _TF_RANDOM_OPS or inner_require_rngs
 
   def __call__(
       self,
@@ -192,7 +192,7 @@ class _OpNode:
     outputs = self.jax_func(*unboxed_args, **extras_dict)
 
     # Return updated variables.
-    if self.op in _tf_assign_ops:
+    if self.op in _TF_ASSIGN_OPS:
       # TODO(shaobohou) This assumes the assign op returns the updated value.
       updated_params = {named_args[0][0]: outputs}
     else:
@@ -787,6 +787,10 @@ def _convert(
   # Recursively convert function protos in FunctionDefLibrary.
   library = dict((library or {}).items())
   if hasattr(graphdef, "library"):
+    if graphdef.library.gradient:
+      raise ValueError("GradientDef not currently supported, found "
+                       f"{graphdef.library.gradient}")
+
     for func_name, func_proto in _get_function_protos(graphdef):
       if func_name not in library:
         logging.info("Converting library function %s", func_name)
@@ -851,7 +855,7 @@ def _convert(
   if not output_names:
     assert _EMPTY_RETURN_OP_NAME not in node_map
     assign_nodes = tuple(
-        f"^{n.name}" for n in graphdef.node if n.op in _tf_assign_ops)
+        f"^{n.name}" for n in graphdef.node if n.op in _TF_ASSIGN_OPS)
     node_map[_EMPTY_RETURN_OP_NAME] = _NodeDef(
         "NoOp", _EMPTY_RETURN_OP_NAME, assign_nodes, {})
     output_names = [_EMPTY_RETURN_OP_NAME]
@@ -1026,7 +1030,7 @@ def _convert_library_function(
         f"Library function should be stateless, found variables {jax_params}")
 
   # Does any of the ops or inner functions require RNG?
-  require_rng = any([n.op in _tf_random_ops for n in proto.node_def])
+  require_rng = any([n.op in _TF_RANDOM_OPS for n in proto.node_def])
   for node in proto.node_def:
     for attr in node.attr.values():
       if attr.func.name:

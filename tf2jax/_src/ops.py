@@ -59,18 +59,6 @@ def _get_jax_op(
   return wrapped
 
 
-def _fix_jax_poly_shape(shape: Tuple[Any, ...]) -> Tuple[Any, ...]:
-  good_shape = []
-  for dim in shape:
-    try:
-      # This catches _DimPolynomial from jax2tf.
-      tf.compat.v1.Dimension(dim)
-      good_shape.append(dim)
-    except TypeError:
-      good_shape.append(None)
-  return tuple(good_shape)
-
-
 _jax_ops = {
     "Abs": _get_jax_op(jnp.abs, {"T"}),
     "Add": _get_jax_op(anp.add, {"T"}),
@@ -221,9 +209,9 @@ def _any(proto):
 def _assert(proto):
   _check_attrs(proto, {"T", "summarize"})
 
-  logging.warning("Assert has no effect and will just return the data.")
+  logging.warning("Assert has no effect.")
 
-  return lambda cond, data: data
+  return lambda cond, data: _EMPTY_RETURN_VALUE
 
 
 @register_operation("AvgPool")
@@ -1300,7 +1288,8 @@ def _splitv(proto):
     defined_size = sum([x for x in splits if x >= 0])
     splits = [x if x >= 0 else value.shape[axis] - defined_size for x in splits]
     indices = np.cumsum(np.array(splits), axis=0)
-    return anp.split(value, indices, axis=axis)
+    assert indices[-1] == value.shape[axis]
+    return anp.split(value, indices[:-1], axis=axis)
 
   return _func
 
@@ -1438,6 +1427,7 @@ class _StatelessWhile(_HigherOrderFunction):
       return outputs + (key,)
 
     outputs = jax.lax.while_loop(real_cond_fun, real_body_fun, args + (rng,))
+    *outputs, _ = outputs  # Drop rng.
     return outputs
 
 
