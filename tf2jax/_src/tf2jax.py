@@ -126,6 +126,8 @@ class _LibraryFunction(NamedTuple):
   output_specs: Optional[Tuple[tf.TensorSpec, ...]] = None
   # If fn is a gradient function, this is the output specs for the original fn.
   orig_fn_output_specs: Optional[Tuple[tf.TensorSpec, ...]] = None
+  # Whether an output is unmodified input to the function.
+  output_is_input: Optional[Tuple[bool]] = None
 
   def __call__(self, *args, **kwargs):
     if self.params:
@@ -993,8 +995,14 @@ def _convert_library_function(
   for arg in proto.signature.input_arg:
     input_nodes.append(
         _NodeDef("Placeholder", arg.name, (), {"dtype": tf.as_dtype(arg.type)}))
+
+  input_arg_names = [arg.name for arg in proto.signature.input_arg]
+
   output_nodes = []
+  output_is_input = []
   for arg in proto.signature.output_arg:
+    # TODO(b/233985145) Keep following the Identity ops through the node_def?
+    output_is_input.append(proto.ret[arg.name] in input_arg_names)
     output_nodes.append(
         _NodeDef(
             "Identity",
@@ -1003,6 +1011,7 @@ def _convert_library_function(
             {"T": tf.as_dtype(arg.type)},
         ))
   graphdef = _GraphDef(tuple(input_nodes + list(proto.node_def) + output_nodes))
+  output_is_input = tuple(output_is_input)
 
   params = [
       inspect.Parameter(arg.name, inspect.Parameter.POSITIONAL_ONLY)
@@ -1037,7 +1046,7 @@ def _convert_library_function(
         require_rng = require_rng or library[attr.func.name].require_rng
 
   return _LibraryFunction(jax_func, require_rng, None, structured_inputs,
-                          structured_outputs)
+                          structured_outputs, output_is_input=output_is_input)
 
 
 def _filter_nodes(

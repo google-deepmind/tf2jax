@@ -1407,12 +1407,46 @@ def _stateless_random_uniform_int_v2(proto):
   return _func
 
 
+def _split_args(
+    args: Sequence[Any],
+    preds: Sequence[bool],
+) -> Tuple[Tuple[Tuple[int, Any]], ...]:
+  """Split args into two lists based on some predicates."""
+  assert len(args) == len(preds), (len(args), len(preds))
+  true_args = []
+  false_args = []
+  for idx, (arg, pred) in enumerate(zip(args, preds)):
+    if pred:
+      true_args.append((idx, arg))
+    else:
+      false_args.append((idx, arg))
+  return tuple(true_args), tuple(false_args)
+
+
+def _merge_args(
+    const_args: Sequence[Tuple[int, Any]],
+    trace_args: Sequence[Tuple[int, Any]],
+) -> Tuple[Any]:
+  args = [None] * (len(const_args) + len(trace_args))
+  for idx, arg in tuple(const_args) + tuple(trace_args):
+    args[idx] = arg
+  assert all(x is not None for x in args)
+  return tuple(args)
+
+
 class _StatelessWhile(_HigherOrderFunction):
   """Represents a StatelessWhile Op."""
 
-  def __call__(self, *args, cond_fun, body_fun, rng=None):
-    def real_cond_fun(args):
+  def __call__(self, *all_args, cond_fun, body_fun, rng=None):
+    # Pull captured arguments out of inputs to cond and body.
+    const_idxs_args, trace_idxs_args = _split_args(
+        all_args, body_fun.output_is_input)
+    trace_idxs, trace_args = zip(*trace_idxs_args)
+
+    def real_cond(args):
       *cond_args, rng = args
+      cond_idxs_args = tuple(zip(trace_idxs, cond_args))
+      cond_args = _merge_args(const_idxs_args, cond_idxs_args)
       _, cond_key, _ = [None] * 3 if rng is None else jax.random.split(rng, 3)
       outputs = cond_fun(*cond_args, rng=cond_key)
       if len(outputs) != 1:
@@ -1420,14 +1454,19 @@ class _StatelessWhile(_HigherOrderFunction):
             f"Expected cond_fun to return a single value, found {outputs}")
       return outputs[0]
 
-    def real_body_fun(args):
+    def real_body(args):
       *body_args, rng = args
+      body_idxs_args = tuple(zip(trace_idxs, body_args))
+      body_args = _merge_args(const_idxs_args, body_idxs_args)
       key, _, body_key = [None] * 3 if rng is None else jax.random.split(rng, 3)
-      outputs = tuple(body_fun(*body_args, rng=body_key))
+      outputs = body_fun(*body_args, rng=body_key)
+      outputs = tuple([outputs[idx] for idx in trace_idxs])
       return outputs + (key,)
 
-    outputs = jax.lax.while_loop(real_cond_fun, real_body_fun, args + (rng,))
+    outputs = jax.lax.while_loop(real_cond, real_body, trace_args + (rng,))
     *outputs, _ = outputs  # Drop rng.
+    outputs = _merge_args(const_idxs_args, tuple(zip(trace_idxs, outputs)))
+    assert len(outputs) == len(all_args), (len(outputs), len(all_args))
     return outputs
 
 

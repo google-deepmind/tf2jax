@@ -1592,6 +1592,19 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
       self._test_convert(while_loop, inputs, functional=False)
 
   @chex.variants(with_jit=True, without_jit=True)
+  def test_while_captured_static_args(self):
+    # This can still fail if output_size is an argument to cond and body.
+    output_size = tf.constant([10, 5])
+    cond = lambda v, i: tf.less(i, 10)
+    body = lambda v, i: (v + tf.ones(output_size, tf.float32), tf.add(i, 1))
+    step = tf.constant(0)
+
+    @tf.function
+    def while_loop(x):
+      return tf.while_loop(cond, body, [x, step])
+    self._test_convert(while_loop, np.zeros(output_size, np.float32))
+
+  @chex.variants(with_jit=True, without_jit=True)
   def test_assign_side_effect(self):
     inputs = np.array([42, 47], dtype=np.float32)
     acc_var = tf.Variable(initial_value=[3, 14], dtype=tf.float32, name="blah")

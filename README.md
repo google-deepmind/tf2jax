@@ -122,8 +122,7 @@ jax_outputs, jax_params = jax_func(jax_params, x, rng=jax.random.PRNGKey(42))
 
 ## Custom Gradient
 
-Custom gradient support is highly experimental and disabled by default, please
-report any errors.
+Custom gradient support is highly experimental, please report any errors.
 
 ```python
 @tf.function
