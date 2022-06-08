@@ -173,8 +173,8 @@ format is supported with minor boilerplate.
 import tensorflow_hub as hub
 
 hub_model = hub.load("/tmp/blah")
-jax_func, jax_params = tf2jax.convert(tf.function(hub_model))
-jax_outputs, jax_params = jax_func(x)
+jax_func, jax_params = tf2jax.convert(tf.function(hub_model), tf.zeros_like(x))
+jax_outputs, updated_jax_params = jax_func(jax_params, x)
 ```
 
 ## JAX to TensorFlow and Back Again.
