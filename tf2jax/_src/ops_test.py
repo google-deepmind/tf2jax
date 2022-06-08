@@ -615,6 +615,7 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
       chex.params_product(
           (("inference", False), ("training", True)),
           (
+              ("FusedBatchNorm", "FusedBatchNorm"),
               ("FusedBatchNormV2", "FusedBatchNormV2"),
               ("FusedBatchNormV3", "FusedBatchNormV3"),
           ),

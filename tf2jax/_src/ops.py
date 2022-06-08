@@ -591,6 +591,7 @@ def _fill(proto):
 
 @register_operation("FusedBatchNormV3")
 @register_operation("FusedBatchNormV2")
+@register_operation("FusedBatchNorm")
 def _fused_batch_norm(proto):
   """Parse a FusedBatchNorm Op."""
   _check_attrs(proto, {
