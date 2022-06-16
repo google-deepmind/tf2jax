@@ -17,7 +17,7 @@
 import collections
 import inspect
 import itertools
-from typing import Any, Callable, Iterator, Optional, Mapping, NamedTuple, Sequence, Tuple, Union
+from typing import Any, Callable, Iterable, Iterator, Optional, Mapping, NamedTuple, Sequence, Tuple, Union
 
 from absl import logging
 
@@ -34,6 +34,42 @@ import tree
 
 from tensorflow.python.framework import op_def_registry  # pylint: disable=no-name-in-module
 from tensorflow.python.framework import ops as tf_ops  # pylint: disable=no-name-in-module
+
+
+SpecTree = Union[tf.TensorSpec, Iterable["SpecTree"], Mapping[str, "SpecTree"]]
+
+
+class AnnotatedFunction:
+  """Callable function with additional metadata.
+
+  The metadata includes: structured inputs and outputs (composed of
+  tf.TensorSpec) and the original function signature.
+  """
+
+  def __init__(
+      self,
+      # TODO(b/235830619) Add more specific type annotations.
+      fn: Callable[..., Any],
+      structured_inputs: SpecTree,
+      structured_outputs: SpecTree,
+      signature: inspect.Signature,
+  ):
+    self.fn = fn
+    self.structured_inputs = structured_inputs
+    self.structured_outputs = structured_outputs
+
+    # Attributes that might be expected by downstream usage.
+    self.__doc__ = fn.__doc__
+    self.__name__ = fn.__name__
+    self.__signature__ = signature
+
+  # This should not be called directly.
+  def __call__(self, *args, **kwargs):
+    return self.fn(*args, **kwargs)
+
+  @property
+  def signature(self) -> inspect.Signature:
+    return self.__signature__
 
 
 _EMPTY_RETURN_OP_NAME = ops._EMPTY_RETURN_OP_NAME  # pylint: disable=protected-access
@@ -283,27 +319,41 @@ class Variable(np.ndarray):
     return message
 
 
-def _make_functional(
-    jax_func: Callable[..., Any],
+def _make_parameterless(
+    jax_func: AnnotatedFunction,
     jax_params: Mapping[str, Variable],
-) -> Callable[..., Any]:
-  if jax_params:
-    raise ValueError(
-        f"Expected function to have no captured variables, found {jax_params}")
+) -> AnnotatedFunction:
+  """Return an AnnotatedFunction that neither expects nor returns parameters."""
+  def assert_empty_params(params):
+    if params:
+      raise ValueError(
+          f"Expected function to have no captured variables, found {params}")
 
-  return lambda *args, **kwargs: jax_func({}, *args, **kwargs)[0]
+  def parameterless_fn(*args, **kwargs):
+    results, params = jax_func.fn({}, *args, **kwargs)
+    assert_empty_params(params)
+    return results
+
+  assert_empty_params(jax_params)
+
+  return AnnotatedFunction(
+      fn=parameterless_fn,
+      structured_inputs=jax_func.structured_inputs,
+      structured_outputs=jax_func.structured_outputs,
+      signature=jax_func.signature,
+  )
 
 
-def convert_functional(tf_func: Any, *args, **kwargs) -> Callable[..., Any]:
-  return _make_functional(*convert(tf_func, *args, **kwargs))
+def convert_functional(tf_func: Any, *args, **kwargs) -> AnnotatedFunction:
+  return _make_parameterless(*convert(tf_func, *args, **kwargs))
 
 
-def convert_functional_from_restored(tf_func: Any) -> Callable[..., Any]:
-  return _make_functional(*convert_from_restored(tf_func))
+def convert_functional_from_restored(tf_func: Any) -> AnnotatedFunction:
+  return _make_parameterless(*convert_from_restored(tf_func))
 
 
 def convert_from_restored(
-    tf_func) -> Tuple[Callable[..., Any], Mapping[str, Variable]]:
+    tf_func) -> Tuple[AnnotatedFunction, Mapping[str, Variable]]:
   """Converts a RestoredFunction (from a SaveModel) if it is unambiguous."""
   concrete_functions = getattr(tf_func, "concrete_functions", ())
   if len(concrete_functions) != 1:
@@ -354,7 +404,7 @@ def convert(
     tf_func: Any,  # tensorflow.python.eager.function is not visible.
     *args,
     **kwargs,
-) -> Tuple[Callable[..., Any], Mapping[str, Variable]]:
+) -> Tuple[AnnotatedFunction, Mapping[str, Variable]]:
   """Convert a tf.Function to a Jax function for some concrete inputs.
 
   The concrete inputs are used to instantiate a tf.ConcreteFunction, the
@@ -441,7 +491,7 @@ def convert(
   else:
     library = {}
 
-  return _convert(
+  jax_func, jax_params = _convert(
       graphdef,
       signature=signature,
       structured_inputs=structured_inputs,
@@ -451,6 +501,13 @@ def convert(
       constants=constants,
       library=library,
   )
+  annotated_fn = AnnotatedFunction(
+      fn=jax_func,
+      structured_inputs=structured_inputs,
+      structured_outputs=structured_outputs,
+      signature=signature,
+  )
+  return annotated_fn, jax_params
 
 
 class _EvaluationCache:

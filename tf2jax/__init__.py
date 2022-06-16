@@ -18,6 +18,8 @@ from tf2jax._src.config import get_config
 from tf2jax._src.config import override_config
 from tf2jax._src.config import update_config
 
+from tf2jax._src.tf2jax import AnnotatedFunction
+
 from tf2jax._src.tf2jax import convert
 from tf2jax._src.tf2jax import convert_from_restored
 from tf2jax._src.tf2jax import convert_functional

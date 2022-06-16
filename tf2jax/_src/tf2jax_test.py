@@ -14,6 +14,8 @@
 # ==============================================================================
 """Tests tf2jax."""
 
+import inspect
+
 from absl.testing import parameterized
 
 import chex
@@ -422,6 +424,36 @@ class FeaturesTest(tf.test.TestCase, parameterized.TestCase):
     jax_outputs = self.variant(jax_func)(kw0=inputs[0], kw1=inputs[1])
 
     self.assertAllClose(tf_outputs, jax_outputs)
+
+  def test_metadata(self):
+    @tf.function
+    def tf_func(x, y, *, z):
+      return x + y + z
+
+    x = np.zeros((10, 5), np.float32)
+    y = np.zeros((10, 1), np.float32)
+    z = np.zeros((), np.float32)
+    jax_func = tf2jax.convert_functional(tf_func, x, y=y, z=z)
+    self.assertEqual(jax_func.structured_inputs, (
+        (
+            tf.TensorSpec(shape=(10, 5), dtype=tf.float32, name="x"),
+            tf.TensorSpec(shape=(10, 1), dtype=tf.float32, name="y"),
+        ),
+        {
+            "z": tf.TensorSpec(shape=(), dtype=tf.float32, name="z")
+        },
+    ))
+    self.assertEqual(
+        jax_func.structured_outputs,
+        tf.TensorSpec(shape=(10, 5), dtype=tf.float32, name="Identity"))
+
+    expected_sig = inspect.Signature([
+        inspect.Parameter("x", inspect.Parameter.POSITIONAL_OR_KEYWORD),
+        inspect.Parameter("y", inspect.Parameter.POSITIONAL_OR_KEYWORD),
+        inspect.Parameter("z", inspect.Parameter.KEYWORD_ONLY),
+    ])
+    self.assertEqual(expected_sig, jax_func.signature)
+    self.assertEqual(expected_sig, inspect.signature(jax_func))
 
   @chex.variants(with_jit=True, without_jit=True)
   def test_jit_nesting(self):
