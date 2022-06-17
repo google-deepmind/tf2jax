@@ -259,6 +259,32 @@ with tf2jax.override_config("force_const_float32_to_bfloat16", True):
 jax_bf16_outputs = jax_func(jnp.asarray(x, jnp.bfloat16))
 ```
 
+### Disable PreventGradient
+
+If `jax2tf.convert(..., with_gradient=False)` is used to produce the initial TF
+function (and possibly exported as SavedModel), then TF2JAX will respect the
+inserted `tf.raw_ops.PreventGradient` ops and raise `LookupError` when computing
+gradients.
+
+This can be disabled by setting the configuration `raise_on_prevent_gradient` to
+false (default is true), so that TF2JAX will only log a warning but otherwise
+allow the gradient to be computed as though the `PreventGradient` ops were not
+present.
+
+```python
+@tf.function
+def prevent(x):
+  return tf.raw_ops.PreventGradient(input=x * x, message="prevented")
+
+jax_func = tf2jax.convert_functional(prevent, 0.0)
+jax.grad(jax_func)(3.14)  # Raise LookupError.
+
+with tf2jax.config.override_config("raise_on_prevent_gradient", False):
+  jax_func = tf2jax.convert_functional(prevent, 0.0)
+g = jax.grad(jax_func)(3.14)  # Returns 6.28.
+
+```
+
 ## Limitations
 
 Currently, only a subset of TensorFlow ops are supported, and not necessarily

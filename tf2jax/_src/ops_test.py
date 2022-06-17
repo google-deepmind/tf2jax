@@ -991,7 +991,7 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
 
     @tf.function
     def prevent(x):
-      return tf.raw_ops.PreventGradient(input=x, message=error_message)
+      return tf.raw_ops.PreventGradient(input=x * x, message=error_message)
 
     np_x = np.array(3.14, dtype=np.float32)
     tf_x = tf.constant(np_x)
@@ -1006,10 +1006,18 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
     jax_func = self.variant(jax_func)
     jax_y = jax_func(np_x)
 
+    self.assertAllClose(tf_y, jax_y)
     with self.assertRaisesRegex(LookupError, error_message):
       jax.grad(jax_func)(np_x)
 
-    self.assertAllClose(tf_y, jax_y)
+    with tf2jax.config.override_config("raise_on_prevent_gradient", False):
+      jax_func = tf2jax.convert_functional(prevent, np.zeros_like(np_x))
+      jax_func = self.variant(jax_func)
+      jax_y = jax_func(np_x)
+      self.assertAllClose(tf_y, jax_y)
+
+      jax_grad = jax.grad(jax_func)(np_x)
+      self.assertAllClose(np_x * 2, jax_grad)
 
   @chex.variants(with_jit=True, without_jit=True)
   def test_pad(self):

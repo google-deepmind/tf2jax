@@ -1033,16 +1033,23 @@ def _prevent_gradient(proto):
   _check_attrs(proto, {"T", "message"})
 
   message = str(proto.attr["message"].s, "utf-8")
-  jax_message = (
-      f"Gradient explicitly prevented on node {proto.name}. Reason: {message}")
 
   @jax.custom_gradient
-  def _func(operand: jnp.ndarray) -> jnp.ndarray:
+  def _raise_func(operand: jnp.ndarray) -> jnp.ndarray:
     def grad_fn(_):
-      raise LookupError(jax_message)
+      raise LookupError(f"Gradient explicitly prevented on node {proto.name}. "
+                        f"Original reason: {message}")
     return operand, grad_fn
 
-  return _func
+  def _warn_func(operand: jnp.ndarray) -> jnp.ndarray:
+    logging.warning("PreventGradient ignored on node %s. Original reason: %s",
+                    proto.name, message)
+    return operand
+
+  if config.get_config("raise_on_prevent_gradient"):
+    return _raise_func
+  else:
+    return _warn_func
 
 
 @register_operation("Prod")

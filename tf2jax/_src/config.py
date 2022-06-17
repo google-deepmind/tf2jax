@@ -25,6 +25,7 @@ _config = dict(
     force_const_float64_to_bfloat16=False,
     convert_custom_gradient=True,
     infer_relu_from_jax2tf=True,
+    raise_on_prevent_gradient=True,
 )
 
 
