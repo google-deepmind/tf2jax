@@ -31,6 +31,36 @@ from tf2jax._src import tf2jax
 import tree
 
 
+class TestDense(tf.Module):
+
+  def __init__(self, input_dim, output_size, name=None):
+    super().__init__(name=name)
+    self.w = tf.Variable(tf.random.normal([input_dim, output_size]), name="w")
+    self.b = tf.Variable(tf.zeros([output_size]), name="b")
+
+  def __call__(self, x):
+    y = tf.matmul(x, self.w) + self.b
+    return tf.nn.relu(y)
+
+
+class TestMLP(tf.Module):
+  """Variables for different dense layers will not have unique names."""
+
+  def __init__(self, input_size, sizes, name=None):
+    super().__init__(name=name)
+    self.layers = []
+    with self.name_scope:
+      for size in sizes:
+        self.layers.append(TestDense(input_dim=input_size, output_size=size))
+        input_size = size
+
+  @tf.Module.with_name_scope
+  def __call__(self, x):
+    for layer in self.layers:
+      x = layer(x)
+    return x
+
+
 class ModelsTest(tf.test.TestCase, parameterized.TestCase):
 
   def _test_convert(self, tf_func, inputs):
@@ -468,6 +498,24 @@ class FeaturesTest(tf.test.TestCase, parameterized.TestCase):
 
     inputs = np.linspace(-1., 1., 6, dtype=np.float32).reshape((2, 3))
     self.assertAllClose(tf.sin(tf_fn(inputs)), tf2jax_fn(inputs))
+
+  @chex.variants(with_jit=True, without_jit=True)
+  def test_non_unique_variable_names(self):
+    model = TestMLP(input_size=5, sizes=[7, 8])
+    self.assertNotEqual(
+        len(set([v.name for v in model.variables])), len(model.variables))
+
+    @tf.function
+    def forward(x):
+      return model(x)
+
+    x = np.arange(10).reshape(2, 5).astype(np.float32)
+    tf_outputs = forward(x)
+
+    apply_fn, params = tf2jax.convert(forward, tf.TensorSpec((None, 5)))
+    jax_outputs, _ = self.variant(apply_fn)(params, x)
+
+    self.assertAllClose(tf_outputs, jax_outputs)
 
 
 if __name__ == "__main__":

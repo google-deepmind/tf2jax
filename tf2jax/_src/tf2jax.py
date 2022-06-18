@@ -890,13 +890,29 @@ def _convert(
                      "as-needed basis, please contact the library owner(s).")
 
   # Extract variables.
-  variables_tf = {_parse_input(v.name): v for _, v in variable_map.items()}
   if tf.executing_eagerly():
+    # Uniqueify variables with identical names.
+    variables_tf = {}
+    var_name_by_ref = {}
+    for v in variable_map.values():
+      name = _parse_input(v.name)
+      suffix = 1
+      var_name = name
+      while var_name in variables_tf:
+        var_name = f"{name}_{suffix}"
+        suffix += 1
+      variables_tf[var_name] = v
+      var_name_by_ref[v.ref()] = var_name
+
     variables = {
         k: Variable(v.numpy(), v.trainable, v.name)
         for k, v in variables_tf.items()
     }
   else:
+    variables_tf = {_parse_input(v.name): v for _, v in variable_map.items()}
+    var_name_by_ref = {
+        v.ref(): _parse_input(v.name) for v in variable_map.values()
+    }
     if variables_tf:
       with tf.compat.v1.Session() as sess:
         sess.run(tf.compat.v1.initialize_variables(variables_tf.values()))
@@ -907,8 +923,13 @@ def _convert(
     else:
       variables = {}
 
-  var_by_node = {k: _parse_input(v.name) for k, v in variable_map.items()}
+  assert len(variable_map) == len(variables_tf)
+  assert len(variable_map) == len(var_name_by_ref)
+  assert len(variable_map) == len(variables)
+
+  var_by_node = {k: var_name_by_ref[v.ref()] for k, v in variable_map.items()}
   node_by_var = {v: k for k, v in var_by_node.items()}
+  assert len(var_by_node) == len(node_by_var)
 
   node_map = {n.name: n for n in graphdef.node}
   if not output_names:
