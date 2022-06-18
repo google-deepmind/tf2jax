@@ -1045,6 +1045,19 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
     self._test_convert(prod_static, [])
 
   @chex.variants(with_jit=True, without_jit=True)
+  def test_rank(self):
+    inputs = np.array(np.reshape(range(24), (4, 3, 2)), dtype=np.int32)
+
+    def rank(xs):
+      return tf.raw_ops.Rank(input=xs)
+    self._test_convert(rank, inputs)
+
+    # Check static inputs result in static outputs.
+    def rank_static():
+      return tf.zeros(rank(inputs))
+    self._test_convert(rank_static, [])
+
+  @chex.variants(with_jit=True, without_jit=True)
   def test_squeeze(self):
     inputs, dims = np.array([[[42], [47]]]), (0, 2)
 

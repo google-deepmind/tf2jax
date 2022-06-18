@@ -121,6 +121,7 @@ _jax_ops = {
     "NotEqual": _get_jax_op(anp.not_equal, {"T", "incompatible_shape_error"}),
     "OnesLike": _get_jax_op(jnp.ones_like, {"T"}),
     "Pow": _get_jax_op(anp.power, {"T"}),
+    "Rank": _get_jax_op(lambda x: np.array(jnp.ndim(x)), {"T"}),
     "Real": _get_jax_op(jax.lax.real, {"T", "Tout"}),
     "ReadVariableOp": _get_jax_op(lambda x: x, {"dtype"}),
     "RealDiv": _get_jax_op(anp.true_divide, {"T"}),
