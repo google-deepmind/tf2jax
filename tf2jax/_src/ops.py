@@ -1604,6 +1604,18 @@ def _unpack(proto):
   return _func
 
 
+@register_operation("VariableV2")
+def _variable_v2(proto):
+  _check_attrs(proto, {"container", "dtype", "shared_name", "shape"})
+
+  name = proto.name
+
+  def _func():
+    raise ValueError(f"VariableV2 `{name}` cannot be evaluated.")
+
+  return _func
+
+
 @register_operation("XlaConvV2")
 @register_operation("XlaConv")
 def _xla_conv(proto):
