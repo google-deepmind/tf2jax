@@ -794,6 +794,20 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
     self._test_convert(inplace_update, inputs)
 
   @chex.variants(with_jit=True, without_jit=True)
+  def test_invert_permutation(self):
+    np.random.seed(42)
+
+    def invert(x):
+      return tf.raw_ops.InvertPermutation(x=x)
+
+    inputs = np.array([2, 4, 3, 0, 1])
+    self._test_convert(invert, inputs)
+
+    def invert_static():
+      return tf.zeros(invert(inputs))
+    self._test_convert(invert_static, [])
+
+  @chex.variants(with_jit=True, without_jit=True)
   @parameterized.named_parameters(
       chex.params_product(
           (

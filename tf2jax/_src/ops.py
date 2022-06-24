@@ -103,6 +103,7 @@ _jax_ops = {
     "Imag": _get_jax_op(jax.lax.imag, {"T", "Tout"}),
     "IsFinite": _get_jax_op(jnp.isfinite, {"T"}),
     "Invert": _get_jax_op(jnp.bitwise_not, {"T"}),
+    "InvertPermutation": _get_jax_op(anp.invert_permutation, {"T"}),
     "L2Loss": _get_jax_op(lambda x: 0.5 * jnp.sum(jnp.square(x)), {"T"}),
     "LeftShift": _get_jax_op(jnp.left_shift, {"T"}),
     "Less": _get_jax_op(anp.less, {"T", "incompatible_shape_error"}),

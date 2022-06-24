@@ -220,3 +220,14 @@ def moveaxis(
     destination: Union[int, Sequence[int]],
 ):
   return _get_np(arr).moveaxis(arr, source=source, destination=destination)
+
+
+def invert_permutation(arr):
+  if arr.ndim != 1:
+    raise ValueError(f"Expected 1D array, found x.dims={arr.ndim}")
+  if _get_np(arr) is np:
+    inds = np.zeros_like(arr)
+    inds[arr.tolist()] = np.arange(0, arr.shape[0])
+    return inds
+  else:
+    return jnp.zeros_like(arr).at[arr].set(jnp.arange(0, arr.shape[0]))
