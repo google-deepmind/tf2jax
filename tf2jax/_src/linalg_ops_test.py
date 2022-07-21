@@ -168,6 +168,67 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
       self.assertAllClose(
           np.matmul(sym_inputs, jax_v), jax_w[..., None, :] * jax_v)
 
+  @chex.variants(with_jit=True, without_jit=True)
+  @parameterized.named_parameters(
+      chex.params_product(
+          (("compute_uv", True), ("not_compute_uv", False)),
+          (
+              ("full_matrices", True),
+              ("not_full_matrices", False),
+          ),
+          (
+              ("unbatched", (3, 3)),
+              ("batched", (3, 4, 5)),
+              ("more_batched", (2, 3, 5, 4)),
+          ),
+          named=True,
+      ))
+  def test_svd(self, compute_uv, full_matrices, shape):
+    np.random.seed(42)
+    inputs = np.random.normal(size=shape).astype(np.float32)
+
+    def svd(x):
+      return tf.raw_ops.Svd(
+          input=x, compute_uv=compute_uv, full_matrices=full_matrices)
+
+    tf_s, tf_u, tf_v = svd(tf.constant(inputs))
+
+    jax_svd = tf2jax.convert_functional(tf.function(svd), np.zeros_like(inputs))
+    jax_s, jax_u, jax_v = self.variant(jax_svd)(inputs)
+
+    self.assertEqual(tf_s.shape, jax_s.shape)
+    if compute_uv:
+      self.assertEqual(tf_u.shape, jax_u.shape)
+      self.assertEqual(tf_v.shape, jax_v.shape)
+
+    # https://numpy.org/doc/stable/reference/generated/numpy.linalg.svd.html)
+    def reconstruct(u, s, v):
+      return tf.matmul(
+          u[..., :s.shape[-1]] * s[..., None, :],
+          v[..., :s.shape[-1]],
+          adjoint_b=True)
+
+    # Adapted from tensorflow/python/kernel_tests/linalg/svd_op_test.py
+    def compare_singular_vectors(x, y):
+      # Singular vectors are only unique up to sign (complex phase factor for
+      # complex matrices), so we normalize the sign first.
+      sum_of_ratios = np.sum(np.divide(y, x), -2, keepdims=True)
+      phases = np.divide(sum_of_ratios, np.abs(sum_of_ratios))
+      x = x * phases
+      self.assertAllClose(x, y, 1e-4)
+
+    self.assertAllClose(jax_s, tf_s)
+    if compute_uv:
+      tf_recon = reconstruct(tf_u, tf_s, tf_v)
+      jax_recon = reconstruct(jax_u, jax_s, jax_v)
+      self.assertAllClose(tf_recon, jax_recon, atol=1e-5)
+      self.assertAllClose(inputs, tf_recon, atol=1e-5)
+      self.assertAllClose(inputs, jax_recon, atol=1e-5)
+
+      rank = min(inputs.shape[-2:])
+      compare_singular_vectors(tf_u[..., :rank], jax_u[..., :rank])
+      compare_singular_vectors(tf_v[..., :rank], jax_v[..., :rank])
+
 
 if __name__ == "__main__":
   tf.test.main()

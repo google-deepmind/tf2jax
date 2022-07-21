@@ -1637,6 +1637,28 @@ def _sum(proto):
   return _func
 
 
+@register_operation("Svd")
+def _svd(proto):
+  """Parse an Svd Op."""
+  _check_attrs(proto, {"T", "compute_uv", "full_matrices"})
+
+  compute_uv = proto.attr["compute_uv"].b
+  full_matrices = proto.attr["full_matrices"].b
+
+  def _func(x: jnp.ndarray) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+    res = jnp.linalg.svd(
+        x, compute_uv=compute_uv, full_matrices=full_matrices)
+    if compute_uv:
+      u, s, vh = res
+      v = jnp.conjugate(jnp.swapaxes(vh, -1, -2))
+    else:
+      u, s, v = None, res, None
+
+    return s, u, v
+
+  return _func
+
+
 @register_operation("TopKV2")
 def _top_k(proto):
   _check_attrs(proto, {"T", "sorted"})
