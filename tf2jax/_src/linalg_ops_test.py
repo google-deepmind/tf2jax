@@ -126,6 +126,48 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
       self.assertAllClose(np.matmul(inputs, tf_v), tf_w[..., None, :] * tf_v)
       self.assertAllClose(np.matmul(inputs, jax_v), jax_w[..., None, :] * jax_v)
 
+  @chex.variants(with_jit=True, without_jit=True)
+  @parameterized.named_parameters(
+      chex.params_product(
+          (("compute_v", True), ("not_compute_v", False)),
+          (
+              ("unbatched", (5, 5)),
+              ("batched", (3, 5, 5)),
+              ("more_batched", (2, 3, 5, 5)),
+          ),
+          named=True,
+      ))
+  def test_eigh(self, compute_v, shape):
+    np.random.seed(42)
+    inputs = np.random.normal(size=shape).astype(np.float32)
+
+    def eigh(x):
+      return tf.raw_ops.SelfAdjointEigV2(input=x, compute_v=compute_v)
+
+    with tf.device("/cpu:0"):
+      tf_w, tf_v = eigh(tf.constant(inputs))
+
+      jax_eigh = tf2jax.convert_functional(
+          tf.function(eigh), np.zeros_like(inputs))
+    jax_w, jax_v = self.variant(jax_eigh)(inputs)
+
+    self.assertTrue(np.all(tf_w[..., :-1] <= tf_w[..., 1:]))
+    self.assertTrue(np.all(jax_w[..., :-1] <= jax_w[..., 1:]))
+
+    # Check eigenvalues so because ordering is not consistent even after sorting
+    for idx in itertools.product(*map(range, shape[:-2])):
+      w_jax, w_tf = jax_w[idx], tf_w[idx]
+      for i in range(shape[-1]):
+        self.assertAllClose(min(abs(w_jax - w_tf[i])), 0., atol=1e-5)
+        self.assertAllClose(min(abs(w_jax[i] - w_tf)), 0., atol=1e-5)
+
+    if compute_v:
+      sym_inputs = np.tril(inputs) + np.swapaxes(np.tril(inputs, -1), -2, -1)
+      self.assertAllClose(
+          np.matmul(sym_inputs, tf_v), tf_w[..., None, :] * tf_v)
+      self.assertAllClose(
+          np.matmul(sym_inputs, jax_v), jax_w[..., None, :] * jax_v)
+
 
 if __name__ == "__main__":
   tf.test.main()

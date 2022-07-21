@@ -577,6 +577,41 @@ def _eig(proto):
   return _func
 
 
+@register_operation("SelfAdjointEigV2")
+def _eigh(proto):
+  """Parse an SelfAdjointEigV2 Op."""
+  _check_attrs(proto, {"T", "compute_v"})
+
+  compute_v = proto.attr["compute_v"].b
+
+  def symmetrize(x):
+    return jnp.tril(x) + jnp.swapaxes(jnp.tril(x, -1), -2, -1)
+
+  def _func(x: jnp.ndarray) -> jnp.ndarray:
+    if compute_v:
+      evals, evecs = jnp.linalg.eigh(x, symmetrize_input=False)
+    else:
+      # symmetrize_input does not exist for eigvalsh.
+      # See https://github.com/google/jax/issues/9473
+      evals, evecs = jnp.linalg.eigvalsh(symmetrize(x)), None
+
+    # Sorting by eigenvalues to tf.raw_ops.Eig better.
+    sort_fn = lambda vals, inds: vals[..., inds]
+    for _ in range(len(x.shape) - 2):
+      sort_fn = jax.vmap(sort_fn, in_axes=(0, 0))
+    einds = jnp.argsort(evals, axis=-1)
+    evals = sort_fn(evals, einds)
+    if compute_v:
+      evecs = sort_fn(evecs, einds)
+
+    if compute_v:
+      return evals, evecs
+    else:
+      return evals, jnp.zeros(shape=(), dtype=evals.dtype)
+
+  return _func
+
+
 @register_operation("Einsum")
 def _einsum(proto):
   """Parse an Einsum Op."""
