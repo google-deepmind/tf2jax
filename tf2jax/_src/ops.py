@@ -77,6 +77,7 @@ _jax_ops = {
     "BitwiseXor": _get_jax_op(jnp.bitwise_xor, {"T"}),
     "BroadcastTo": _get_jax_op(anp.broadcast_to, {"T", "Tidx"}),
     "Ceil": _get_jax_op(jnp.ceil, {"T"}),
+    "Cholesky": _get_jax_op(jnp.linalg.cholesky, {"T"}),
     "Complex": _get_jax_op(jax.lax.complex, {"T", "Tout"}),
     "ComplexAbs": _get_jax_op(jax.lax.abs, {"T", "Tout"}),
     "Conj": _get_jax_op(jax.lax.conj, {"T", "Tout"}),
@@ -543,6 +544,35 @@ def _depthwise_conv2d(proto):
         dimension_numbers=dimension_numbers,
         rhs_dilation=dilations,
         feature_group_count=lhs.shape[channel_index])
+
+  return _func
+
+
+@register_operation("Eig")
+def _eig(proto):
+  """Parse an Eig Op."""
+  _check_attrs(proto, {"T", "Tout", "compute_v"})
+
+  compute_v = proto.attr["compute_v"].b
+
+  def _func(x: jnp.ndarray) -> jnp.ndarray:
+    if compute_v:
+      evals, evecs = jnp.linalg.eig(x)
+    else:
+      evals = jnp.linalg.eigvals(x)
+      evecs = jnp.zeros(shape=(), dtype=evals.dtype)
+
+    # Sorting by eigenvalues to match tf.raw_ops.Eig better.
+    sort_fn = lambda vals, inds: vals[..., inds]
+    for _ in range(len(x.shape) - 2):
+      sort_fn = jax.vmap(sort_fn, in_axes=(0, 0))
+    einds = jnp.argsort(jnp.absolute(evals), axis=-1)
+    evals = sort_fn(evals, einds)
+
+    if compute_v:
+      evecs = sort_fn(evecs, einds)
+
+    return evals, evecs
 
   return _func
 

@@ -32,11 +32,6 @@ def _reorder(vals, inds):
   return [vals[idx] for idx in inds]
 
 
-@contextlib.contextmanager
-def _nullcontext(enter_result=None):
-  yield enter_result
-
-
 class OpsTest(tf.test.TestCase, parameterized.TestCase):
 
   def test_get_unsupported(self):
@@ -46,7 +41,7 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
 
   def _assert_if_jitted(self, err):
     jitted = self.variant.type == chex.ChexVariantType.WITH_JIT
-    return self.assertRaises(err) if jitted else _nullcontext()
+    return self.assertRaises(err) if jitted else contextlib.nullcontext()
 
   def _test_convert(self,
                     tf_func,
@@ -1197,6 +1192,7 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
           named=True,
       ))
   def test_resize_bilinear(self, size, align_and_half):
+    np.random.seed(42)
     align, half_pixel = align_and_half
 
     def resize_bilinear(imgs):
@@ -1217,6 +1213,7 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
           named=True,
       ))
   def test_resize_bilinear_invalid(self, align_and_half):
+    np.random.seed(42)
     align, half_pixel = align_and_half
 
     def resize_bilinear(imgs):
