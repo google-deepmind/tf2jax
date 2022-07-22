@@ -315,15 +315,14 @@ TF1 control flows are not supported.
 call TensorFlow functions. For compiled code, this works by staging out
 TensorFlow functions to XLA.
 
-https://github.com/google/jax/blob/master/jax/experimental/jax2tf/README.md#calling-tensorflow-functions-from-jax
+From the [jax2tf documentation], as of 2022-07-22:
 
-From their documentation (as of 08.02.2021):
-
-> The experimental function call_tf allows JAX to call TensorFlow functions.
+> The function `call_tf` allows JAX functions to call TensorFlow functions.
 > These functions can be called anywhere in a JAX computation, including in
-> jax.jit, jax.pmap, jax.xmap, or inside JAX's control-flow primitives. For now,
-> only reverse-mode autodiff is supported for these functions (no forward-mode
-> autodiff, nor vmap).
+> staging contexts `jax.jit`, `jax.pmap`, `jax.xmap`, or inside JAX's
+> control-flow primitives. In non-staging contexts, the TensorFlow function is
+> called in eager mode. For now, only reverse-mode autodiff is supported for
+> these functions (no forward-mode autodiff, nor `vmap`).
 
 The advantage of `call_tf` is that it implicitly covers all TensorFlow ops and
 supports `custom_gradient` by deferring to TensorFlow during eager execution and
@@ -348,3 +347,4 @@ ops.
 [DeepMind JAX Ecosystem citation]: https://github.com/deepmind/jax/blob/main/deepmind2020jax.txt "Citation"
 [JAX]: https://github.com/google/jax "JAX on GitHub"
 [TensorFlow]: https://github.com/tensorflow/tensorflow "TensorFlow on GitHub"
+[jax2tf documentation]: https://github.com/google/jax/blob/master/jax/experimental/jax2tf/README.md#calling-tensorflow-functions-from-jax "jax2tf documentation"
