@@ -29,13 +29,17 @@ written in JAX.
 
 ## Installation
 
-TF2JAX can be installed with `pip` directly from github, with the following command:
+You can install the latest released version of TF2JAX from PyPI via:
 
-`pip install git+git://github.com/deepmind/tf2jax.git`
+```sh
+pip install tf2jax
+```
 
-or from PyPI:
+or you can install the latest development version from GitHub:
 
-`pip install tf2jax`
+```sh
+pip install git+https://github.com/deepmind/tf2jax.git
+```
 
 ## Motivations
 
