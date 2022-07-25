@@ -373,6 +373,12 @@ def convert_from_restored(
   return convert(tf_func, *args, **kwargs)
 
 
+def _is_tensorspec_like(v: Any) -> bool:
+  return (isinstance(v, tf.TensorSpec) or (
+      type(v).__module__.endswith("tensorflow.python.framework.tensor_spec") and
+      type(v).__name__ == "VariableSpec"))
+
+
 def _fix_tfhub_specs(
     structured_specs,
     flat_tensors,
@@ -382,7 +388,7 @@ def _fix_tfhub_specs(
   flat_specs = tree.flatten(structured_specs)
   tensor_count = 0
   for idx, val in enumerate(flat_specs):
-    if isinstance(val, tf.TensorSpec):
+    if _is_tensorspec_like(val):
       flat_specs[idx] = tf.TensorSpec(
           val.shape, val.dtype, name=flat_tensors[tensor_count].op.name)
       tensor_count += 1
