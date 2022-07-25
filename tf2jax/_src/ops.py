@@ -931,6 +931,26 @@ def _matrix_band_part(proto):
   return _func
 
 
+@register_operation("MatrixTriangularSolve")
+def _matrix_triangular_solve(proto):
+  """Parse an MatrixTriangularSolve Op."""
+  _check_attrs(proto, {"T", "lower", "adjoint"})
+
+  lower = proto.attr["lower"].b
+  adjoint = proto.attr["adjoint"].b
+
+  def _func(arr: jnp.ndarray, rhs: jnp.ndarray) -> jnp.ndarray:
+    return jax.lax.linalg.triangular_solve(
+        arr,
+        rhs,
+        lower=lower,
+        transpose_a=adjoint,
+        conjugate_a=adjoint,
+        left_side=True)
+
+  return _func
+
+
 @register_operation("Max")
 def _max(proto):
   _check_attrs(proto, {"T", "Tidx", "keep_dims"})
@@ -1128,6 +1148,19 @@ def _prod(proto):
 
   def _func(x: jnp.ndarray, axis: jnp.ndarray) -> jnp.ndarray:
     return anp.prod(x, axis=axis.tolist(), keepdims=keep_dims)
+
+  return _func
+
+
+@register_operation("Qr")
+def _qr(proto):
+  """Parse an QR Op."""
+  _check_attrs(proto, {"T", "full_matrices"})
+
+  full_matrices = proto.attr["full_matrices"].b
+
+  def _func(x: jnp.ndarray) -> Tuple[jnp.ndarray, jnp.ndarray]:
+    return jnp.linalg.qr(x, mode="complete" if full_matrices else "reduced")
 
   return _func
 

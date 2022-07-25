@@ -171,6 +171,37 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
   @chex.variants(with_jit=True, without_jit=True)
   @parameterized.named_parameters(
       chex.params_product(
+          (
+              ("full_matrices", True),
+              ("not_full_matrices", False),
+          ),
+          (
+              ("unbatched", (5, 5)),
+              ("batched", (3, 4, 5)),
+              ("more_batched", (2, 3, 5, 4)),
+          ),
+          named=True,
+      ))
+  def test_qr(self, full_matrices, shape):
+    np.random.seed(42)
+    inputs = np.random.normal(size=shape).astype(np.float32)
+
+    def qr(x):
+      return tf.raw_ops.Qr(input=x, full_matrices=full_matrices)
+
+    tf_q, tf_r = qr(tf.constant(inputs))
+
+    jax_qr = tf2jax.convert_functional(tf.function(qr), np.zeros_like(inputs))
+    jax_q, jax_r = self.variant(jax_qr)(inputs)
+
+    self.assertEqual(tf_q.shape, jax_q.shape)
+    self.assertEqual(tf_r.shape, jax_r.shape)
+    self.assertAllClose(jax_q, tf_q)
+    self.assertAllClose(jax_r, tf_r)
+
+  @chex.variants(with_jit=True, without_jit=True)
+  @parameterized.named_parameters(
+      chex.params_product(
           (("compute_uv", True), ("not_compute_uv", False)),
           (
               ("full_matrices", True),
@@ -228,6 +259,45 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
       rank = min(inputs.shape[-2:])
       compare_singular_vectors(tf_u[..., :rank], jax_u[..., :rank])
       compare_singular_vectors(tf_v[..., :rank], jax_v[..., :rank])
+
+  @chex.variants(with_jit=True, without_jit=True)
+  @parameterized.named_parameters(
+      chex.params_product(
+          (
+              ("lower", True),
+              ("upper", False),
+          ),
+          (
+              ("adjoint", True),
+              ("not_adjoint", False),
+          ),
+          (
+              ("unbatched", ((5, 5), (5, 5))),
+              ("batched", ((3, 5, 5), (3, 5, 4))),
+              ("more_batched", ((2, 3, 5, 5), (2, 3, 5, 6))),
+          ),
+          named=True,
+      ))
+  def test_triangular_solve(self, lower, adjoint, shapes):
+    lhs_shape, rhs_shape = shapes
+
+    np.random.seed(42)
+    inputs = np.random.normal(size=lhs_shape).astype(np.float32)
+    rhs_inputs = np.random.normal(size=rhs_shape).astype(np.float32)
+
+    def triangular_solve(x, rhs):
+      return tf.raw_ops.MatrixTriangularSolve(
+          matrix=x, rhs=rhs, lower=lower, adjoint=adjoint)
+
+    tf_res = triangular_solve(tf.constant(inputs), tf.constant(rhs_inputs))
+
+    jax_triangular_solve = tf2jax.convert_functional(
+        tf.function(triangular_solve), np.zeros_like(inputs),
+        np.zeros_like(rhs_inputs))
+    jax_res = self.variant(jax_triangular_solve)(inputs, rhs_inputs)
+
+    self.assertEqual(tf_res.shape, jax_res.shape)
+    self.assertAllClose(jax_res, tf_res, atol=1e-5)
 
 
 if __name__ == "__main__":
