@@ -1546,6 +1546,64 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
     self._test_convert(switch_fn, [np.array(1, dtype=np.int32)])
 
   @chex.variants(with_jit=True, without_jit=True)
+  @parameterized.named_parameters(
+      chex.params_product(
+          (
+              (
+                  "1D",
+                  np.ones([8], dtype=np.float32),
+                  np.array([[4], [3], [1], [7]], dtype=np.int32),
+                  np.array([9, 10, 11, 12], dtype=np.float32),
+              ),
+              (
+                  "2D_scalar",
+                  np.ones([8, 2], dtype=np.float32),
+                  np.array([[4, 0], [3, 1], [1, 0], [7, 1]], dtype=np.int32),
+                  np.array([9, 10, 11, 12], dtype=np.float32),
+              ),
+              (
+                  "2D_slice",
+                  np.ones([8, 2], dtype=np.float32),
+                  np.array([[4], [3], [1], [7]], dtype=np.int32),
+                  np.array([[9, 90], [10, 100], [11, 110], [12, 120]],
+                           dtype=np.float32),
+              ),
+              (
+                  "3D_scalar",
+                  np.ones([8, 3, 2], dtype=np.float32),
+                  np.array([[4, 0, 0], [3, 1, 1], [1, 2, 0], [7, 0, 1]],
+                           dtype=np.int32),
+                  np.array([9, 10, 11, 12], dtype=np.float32),
+              ),
+              (
+                  "3D_slice",
+                  np.ones([8, 3, 2], dtype=np.float32),
+                  np.array([[4, 0], [3, 1], [1, 2], [7, 0]], dtype=np.int32),
+                  np.array([[9, 90], [10, 100], [11, 110], [12, 120]],
+                           dtype=np.float32),
+              ),
+              (
+                  "3D_block",
+                  np.ones([8, 3, 2], dtype=np.float32),
+                  np.array([[4], [3], [1], [7]], dtype=np.int32),
+                  np.array([
+                      [[9, 90], [91, 92], [93, 94]],
+                      [[10, 100], [101, 102], [103, 104]],
+                      [[11, 110], [111, 112], [113, 114]],
+                      [[12, 120], [121, 122], [123, 124]],
+                  ],
+                           dtype=np.float32),
+              ),
+          ),
+          named=True,
+      ))
+  def test_tensor_scatter_update(self, tensor, indices, updates):
+    def scatter(x, inds, ups):
+      return tf.raw_ops.TensorScatterUpdate(tensor=x, indices=inds, updates=ups)
+
+    self._test_convert(scatter, [tensor, indices, updates])
+
+  @chex.variants(with_jit=True, without_jit=True)
   def test_unpack(self):
     inputs = np.array([[1, 2], [3, 4], [5, 6]])
 
@@ -1557,6 +1615,22 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
     def unpack_static():
       return [tf.zeros(s) for s in unpack(inputs)]
     self._test_convert(unpack_static, [])
+
+  @chex.variants(with_jit=True, without_jit=True)
+  @parameterized.parameters("UnsortedSegmentSum", "UnsortedSegmentMax",
+                            "UnsortedSegmentMin", "UnsortedSegmentProd")
+  def test_unsorted_segment(self, op_name):
+    def segment_reduce(x, ids):
+      return getattr(tf.raw_ops, op_name)(
+          data=x, segment_ids=ids, num_segments=2)
+
+    data = np.array([5, 1, 7, 2, 3, 4], np.float32)
+    segment_ids = np.array([0, 0, 1, 1, 0, 1], np.int32)
+    self._test_convert(segment_reduce, [data, segment_ids])
+
+    data = np.array([[1, 2, 3, 4], [5, 6, 7, 8], [4, 3, 2, 1]], np.float32)
+    segment_ids = np.array([0, 1, 0], np.int32)
+    self._test_convert(segment_reduce, [data, segment_ids])
 
   @chex.variants(without_jit=True)
   def test_where(self):

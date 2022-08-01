@@ -149,6 +149,18 @@ _jax_ops = {
     "Tan": _get_jax_op(jnp.tan, {"T"}),
     "Tanh": _get_jax_op(jnp.tanh, {"T"}),
     "Tile": _get_jax_op(anp.tile, {"T", "Tmultiples"}),
+    "UnsortedSegmentMax": _get_jax_op(
+        functools.partial(jax.ops.segment_max, indices_are_sorted=False),
+        {"T", "Tindices", "Tnumsegments"}),
+    "UnsortedSegmentMin": _get_jax_op(
+        functools.partial(jax.ops.segment_min, indices_are_sorted=False),
+        {"T", "Tindices", "Tnumsegments"}),
+    "UnsortedSegmentProd": _get_jax_op(
+        functools.partial(jax.ops.segment_prod, indices_are_sorted=False),
+        {"T", "Tindices", "Tnumsegments"}),
+    "UnsortedSegmentSum": _get_jax_op(
+        functools.partial(jax.ops.segment_sum, indices_are_sorted=False),
+        {"T", "Tindices", "Tnumsegments"}),
     "Where": _get_jax_op(jnp.argwhere, {"T"}),
     "ZerosLike": _get_jax_op(jnp.zeros_like, {"T"}),
     # The assignment logic is handled in _OpNode and convert().
@@ -1688,6 +1700,25 @@ def _svd(proto):
       u, s, v = None, res, None
 
     return s, u, v
+
+  return _func
+
+
+@register_operation("TensorScatterUpdate")
+def _tensor_scatter_update(proto):
+  """Parse an TensorScatterUpdate Op."""
+  _check_attrs(proto, {"T", "Tindices"})
+
+  def _func(
+      operand: jnp.ndarray,
+      indices: jnp.ndarray,
+      updates: jnp.ndarray,
+  ) -> jnp.ndarray:
+    dimension_numbers = jax.lax.ScatterDimensionNumbers(
+        range(1, updates.ndim), range(indices.shape[-1]),
+        range(indices.shape[-1]))
+    return jax.lax.scatter(
+        operand, indices, updates, dimension_numbers=dimension_numbers)
 
   return _func
 
