@@ -2003,6 +2003,26 @@ def _xla_variadic_sort(proto):
   return _XlaVariadicSort(dict(comparator=comparator), is_stable=is_stable)
 
 
+# Taken from https://github.com/google/jax/blob/main/jax/_src/lax/lax.py#L1056
+def _get_max_identity(dtype):
+  if jax.dtypes.issubdtype(dtype, np.inexact):
+    return np.array(-np.inf, dtype)
+  elif jax.dtypes.issubdtype(dtype, np.integer):
+    return np.array(jax.dtypes.iinfo(dtype).min, dtype)
+  elif jax.dtypes.issubdtype(dtype, np.bool_):
+    return np.array(False, np.bool_)
+
+
+# Taken from https://github.com/google/jax/blob/main/jax/_src/lax/lax.py#L1064
+def _get_min_identity(dtype):
+  if jax.dtypes.issubdtype(dtype, np.inexact):
+    return np.array(np.inf, dtype)
+  elif jax.dtypes.issubdtype(dtype, np.integer):
+    return np.array(jax.dtypes.iinfo(dtype).max, dtype)
+  elif jax.dtypes.issubdtype(dtype, np.bool_):
+    return np.array(True, np.bool_)
+
+
 class _XlaReduceWindow(_HigherOrderFunction):
   """Represents a XlaReduceWindow Op."""
 
@@ -2018,11 +2038,18 @@ class _XlaReduceWindow(_HigherOrderFunction):
       *,
       computation: Callable[..., Any],
   ):
+    window_dimensions = window_dimensions.tolist()
+    window_strides = window_strides.tolist()
+    padding = padding.tolist()
+    base_dilation = base_dilation.tolist()
+    window_dilation = window_dilation.tolist()
+
     # Pattern matching computations that can be specialized.
     primitives = {
         jax.lax.max_p: jax.lax.max,
         jax.lax.min_p: jax.lax.min,
         jax.lax.add_p: jax.lax.add,
+        jax.lax.mul_p: jax.lax.mul,
     }
     computation_jaxpr = jax.make_jaxpr(computation)(init_value, init_value)
     computation_eqn = _maybe_get_jaxpreqn(computation_jaxpr)
@@ -2033,15 +2060,56 @@ class _XlaReduceWindow(_HigherOrderFunction):
       logging.info("Calling reduce_window with the following computation:\n%s",
                    computation_jaxpr)
 
-    return jax.lax.reduce_window(
-        operand,
-        init_value,
-        computation=computation_fn,
-        window_dimensions=window_dimensions.tolist(),
-        window_strides=window_strides.tolist(),
-        padding=[tuple(v) for v in padding.tolist()],
-        base_dilation=base_dilation.tolist(),
-        window_dilation=window_dilation.tolist())
+    def infer_cumulative_reduction():
+      ndims = len(window_dimensions)
+      assert ndims == operand.ndim
+      reduce_axis = np.argmax(window_dimensions)
+      reduce_dim = operand.shape[reduce_axis]
+      dims = [1] * ndims
+      dims[reduce_axis] = reduce_dim
+      if not (window_dimensions == dims and window_strides == [1] * ndims and
+              base_dilation == [1] * ndims and window_dilation == [1] * ndims):
+        return (None, None, None)
+
+      # Determine direction of reduction.
+      normal_padding = [[0, 0]] * ndims
+      normal_padding[reduce_axis] = [reduce_dim - 1, 0]
+      reverse_padding = [[0, 0]] * ndims
+      reverse_padding[reduce_axis] = [0, reduce_dim - 1]
+      reverse = None
+      if padding == normal_padding:
+        reverse = False
+      elif padding == reverse_padding:
+        reverse = True
+      else:
+        return (None, None, None)
+
+      if computation_fn is jax.lax.add and init_value == 0:
+        return (jax.lax.cumsum, reduce_axis, reverse)
+      elif computation_fn is jax.lax.mul and init_value == 1:
+        return (jax.lax.cumprod, reduce_axis, reverse)
+      elif (computation_fn is jax.lax.max and
+            init_value == _get_max_identity(operand.dtype)):
+        return (jax.lax.cummax, reduce_axis, reverse)
+      elif (computation_fn is jax.lax.min and
+            init_value == _get_min_identity(operand.dtype)):
+        return (jax.lax.cummin, reduce_axis, reverse)
+      else:
+        return (None, None, None)
+
+    reducer, reduce_axis, reverse = infer_cumulative_reduction()
+    if reducer and config.get_config("infer_cumulative_reduction_from_jax2tf"):
+      return reducer(operand, axis=reduce_axis, reverse=reverse)
+    else:
+      return jax.lax.reduce_window(
+          operand,
+          init_value,
+          computation=computation_fn,
+          window_dimensions=window_dimensions,
+          window_strides=window_strides,
+          padding=[tuple(v) for v in padding],
+          base_dilation=base_dilation,
+          window_dilation=window_dilation)
 
 
 @register_operation("XlaReduceWindow")

@@ -434,6 +434,56 @@ class Jax2TfTest(parameterized.TestCase, tf.test.TestCase):
   @chex.variants(with_jit=True)
   @parameterized.named_parameters(
       chex.params_product(
+          (("without_gradient", False), ("with_gradient", True)),
+          (("enable_xla", True),),
+          (
+              ("min", jax.lax.cummin),
+              ("max", jax.lax.cummax),
+              ("sum", jax.lax.cumsum),
+              ("prod", jax.lax.cumprod),
+          ),
+          (
+              ("dim0", 0),
+              ("dim1", 1),
+          ),
+          (
+              ("reverse", True),
+              ("not_reverse", False),
+          ),
+          (
+              ("heurstic", True),
+              ("no_heuristic", False),
+          ),
+          named=True,
+      ))
+  def test_cumulative_reduction(self, with_grad, enable_xla, reducer, axis,
+                                reverse, use_heuristic):
+    np.random.seed(42)
+
+    def forward(x):
+      return reducer(x, axis=axis, reverse=reverse)
+
+    inputs = np.random.normal(size=(4, 3))
+
+    with config.override_config("infer_cumulative_reduction_from_jax2tf",
+                                use_heuristic):
+      roundtrip_forward = tf2jax.convert_functional(
+          tf.function(jax2tf.convert(forward)), inputs)
+      roundtrip_jaxpr = jax.make_jaxpr(roundtrip_forward)(inputs)
+      if use_heuristic:
+        self.assertNotIn("reduce_window", roundtrip_jaxpr.pretty_print())
+
+      if (with_grad and enable_xla and reducer is jax.lax.cumprod and
+          not use_heuristic):
+        self.skipTest("No differentiation rule for `reduce_window` with "
+                      "`jax.lax.cumprod`.")
+
+      self._test_convert(
+          forward, [inputs], with_grad=with_grad, enable_xla=enable_xla)
+
+  @chex.variants(with_jit=True)
+  @parameterized.named_parameters(
+      chex.params_product(
           (("without_gradient", False),),
           (("enable_xla", True),),
           (("uint32", np.uint32),),
