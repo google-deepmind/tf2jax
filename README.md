@@ -359,4 +359,4 @@ ops.
 [JAX]: https://github.com/google/jax "JAX on GitHub"
 [TensorFlow]: https://github.com/tensorflow/tensorflow "TensorFlow on GitHub"
 [jax2tf documentation]: https://github.com/google/jax/blob/master/jax/experimental/jax2tf/README.md#calling-tensorflow-functions-from-jax "jax2tf documentation"
-[jax2tf_cumulative_reduction] https://github.com/google/jax/blob/main/jax/experimental/jax2tf/jax2tf.py#L2172
+[jax2tf_cumulative_reduction]: https://github.com/google/jax/blob/main/jax/experimental/jax2tf/jax2tf.py#L2172
