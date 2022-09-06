@@ -26,6 +26,7 @@ import jax.numpy as jnp
 import numpy as np
 import tensorflow as tf
 from tf2jax._src import config
+from tf2jax._src import test_util
 from tf2jax._src import tf2jax
 import tree
 
@@ -41,12 +42,13 @@ def _compute_gradients(func, *inputs):
   return jax.grad(lambda *args: jnp.sum(fn(*args)))(*inputs)
 
 
-class Jax2TfTest(parameterized.TestCase, tf.test.TestCase):
+class Jax2TfTest(test_util.TestCase):
 
   def _test_convert(
       self,
       jax_func,
       inputs,
+      *,
       with_grad,
       enable_xla,
       with_custom_grad=False,
@@ -65,13 +67,14 @@ class Jax2TfTest(parameterized.TestCase, tf.test.TestCase):
     # Jax -> TF
     tf_func = jax2tf.convert(jax_func, with_gradient=with_grad,
                              enable_xla=enable_xla)
+    tf_func = tf.function(tf_func, jit_compile=True)
     tf_outputs = tf_func(*inputs)
     jax.tree_map(self.assertAllClose, jax_outputs, tf_outputs)
 
     # Jax -> TF -> Jax
     with config.override_config("convert_custom_gradient", with_custom_grad):
       rejax_func = tf2jax.convert_functional(
-          tf.function(tf_func), *tree.map_structure(np.zeros_like, inputs))
+          tf_func, *tree.map_structure(np.zeros_like, inputs))
     rejax_func = self.variant(rejax_func)
     rejax_outputs = rejax_func(*inputs)
     jax.tree_map(self.assertAllClose, rejax_outputs, tf_outputs)
@@ -81,8 +84,7 @@ class Jax2TfTest(parameterized.TestCase, tf.test.TestCase):
 
     # Jax -> TF -> SavedModel -> TF
     model = tf.Module()
-    model.f = tf.function(tf_func)
-    model.f(*tree.map_structure(tf.zeros_like, inputs))  # Dummy call.
+    model.f = tf_func
     tmp_dir = self.create_tempdir()
     tf.saved_model.save(model, tmp_dir.full_path)
     del model
@@ -458,6 +460,10 @@ class Jax2TfTest(parameterized.TestCase, tf.test.TestCase):
       ))
   def test_cumulative_reduction(self, with_grad, enable_xla, reducer, axis,
                                 reverse, use_heuristic):
+    if (with_grad and not use_heuristic and
+        jax.default_backend().lower() == "tpu"):
+      self.skipTest("Gradient of reduce-window not always supported on TPU")
+
     np.random.seed(42)
 
     def forward(x):
@@ -569,8 +575,16 @@ class Jax2TfTest(parameterized.TestCase, tf.test.TestCase):
 
     inputs = np.random.normal(size=(8, 5, 5, 3))
     jax_fn = jax.jacrev(forward)
-    self._test_convert(
-        jax_fn, [inputs], with_grad=with_grad, enable_xla=enable_xla)
+
+    try:
+      self._test_convert(
+          jax_fn, [inputs], with_grad=with_grad, enable_xla=enable_xla)
+    except tf.errors.InvalidArgumentError as e:
+      if jax.default_backend().lower() == "tpu":
+        # Can fail on older TPUs.
+        self.assertIn("XLA can't use dynamic begin values for slice", str(e))  # pylint: disable=g-assert-in-except
+      else:
+        raise e
 
   @chex.variants(with_jit=True)
   @parameterized.named_parameters(
