@@ -24,6 +24,7 @@ import numpy as np
 
 import tensorflow as tf
 from tf2jax._src import ops
+from tf2jax._src import test_util
 from tf2jax._src import tf2jax
 import tree
 
@@ -32,7 +33,7 @@ def _reorder(vals, inds):
   return [vals[idx] for idx in inds]
 
 
-class OpsTest(tf.test.TestCase, parameterized.TestCase):
+class OpsTest(test_util.TestCase):
 
   def test_get_unsupported(self):
     unsupported = ops.get_unsupported_operations(
@@ -46,13 +47,18 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
   def _test_convert(self,
                     tf_func,
                     inputs,
+                    *,
                     check_shape_only=False,
-                    functional=True):
+                    functional=True,
+                    atol=1e-5):
     if not isinstance(inputs, (list, tuple)):
       inputs = (inputs,)
 
+    if not hasattr(tf_func, "get_concrete_function"):
+      tf_func = tf.function(tf_func, jit_compile=True)
+
     jax_func, jax_params = tf2jax.convert(
-        tf.function(tf_func), *tree.map_structure(np.zeros_like, inputs))
+        tf_func, *tree.map_structure(np.zeros_like, inputs))
     if functional:
       self.assertEmpty(jax_params, "Expected no parameters for pure Ops.")
 
@@ -67,7 +73,7 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
         tree.flatten(tf_results), tree.flatten(jax_results)):
       self.assertEqual(tf_res.shape, jax_res.shape)
       if not check_shape_only:
-        self.assertAllClose(np.asarray(tf_res), jax_res, atol=1e-5)
+        self.assertAllClose(np.asarray(tf_res), jax_res, atol=atol)
 
     return jax_results, new_jax_params
 
@@ -77,7 +83,13 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
   def test_activations(self, op_name):
     np.random.seed(42)
     inputs = [np.random.normal(size=(10, 5)).astype(np.float32)]
-    self._test_convert(getattr(tf.nn, op_name), inputs)
+
+    if jax.default_backend().lower() == "tpu" and op_name in ("softplus",):
+      tols = dict(atol=1e-4)
+    else:
+      tols = {}
+
+    self._test_convert(getattr(tf.nn, op_name), inputs, **tols)
 
   @chex.variants(with_jit=True, without_jit=True)
   def test_assert(self):
@@ -130,7 +142,13 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
 
     def tf_func(x, y):
       return getattr(tf.raw_ops, op_name)(x=x, y=y)
-    self._test_convert(tf_func, inputs)
+
+    if jax.default_backend().lower() == "tpu" and op_name in ("Pow",):
+      tols = dict(atol=1e-4)
+    else:
+      tols = {}
+
+    self._test_convert(tf_func, inputs, **tols)
 
     # Check static inputs result in static outputs.
     def tf_static():
@@ -764,6 +782,7 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
   def test_inplace_add(self):
     np.random.seed(42)
 
+    @tf.function
     def inplace_add(x, idx, val):
       return tf.raw_ops.InplaceAdd(x=x, i=idx, v=val)
 
@@ -772,12 +791,26 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
         [2, 5],
         [[1, 2], [3, 4]],
     ]
-    self._test_convert(inplace_add, inputs)
+
+    try:
+      self._test_convert(inplace_add, inputs)
+    except tf.errors.InvalidArgumentError as e:
+      if jax.default_backend().lower() == "tpu":
+        self.assertIn("index must be Rank 1 and size 1", str(e))  # pylint: disable=g-assert-in-except
+        tpu_inputs = [
+            np.random.normal(size=[10, 2]).astype(np.float32),
+            [5],
+            [[3, 4]],
+        ]
+        self._test_convert(inplace_add, tpu_inputs)
+      else:
+        raise e
 
   @chex.variants(with_jit=True, without_jit=True)
   def test_inplace_update(self):
     np.random.seed(42)
 
+    @tf.function
     def inplace_update(x, idx, val):
       return tf.raw_ops.InplaceUpdate(x=x, i=idx, v=val)
 
@@ -1350,28 +1383,33 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
     def tf_func(seed):
       return tf.random.stateless_normal(
           shape=(16, 7), seed=seed, dtype=tf.float32)
-    self._test_convert(tf_func, (np.array([0, 42]),), check_shape_only=True)
+
+    seed = np.array([0, 42], dtype=np.int32)
+    self._test_convert(tf_func, (seed,), check_shape_only=True)
 
     def raw_func(seed):
       key, counter = tf.raw_ops.StatelessRandomGetKeyCounter(seed=seed)
       return tf.raw_ops.StatelessRandomNormalV2(
           shape=(1000000, 7), key=key, counter=counter, alg=3, dtype=tf.float32)
-    self._test_convert(raw_func, (np.array([0, 42]),), check_shape_only=True)
+
+    seed = np.array([0, 42], dtype=np.int32)
+    self._test_convert(raw_func, (seed,), check_shape_only=True)
 
     with self.subTest("check_statistics"):
       jax_func = tf2jax.convert_functional(
-          tf.function(raw_func), np.array([0, 42]))
+          tf.function(raw_func, jit_compile=True), seed)
       jax_func = self.variant(jax_func)
-      samples = jax_func(np.array([0, 42]))
+      samples = jax_func(seed)
       self.assertAllClose(np.mean(samples), 0.0, atol=1e-3)
       self.assertAllClose(np.std(samples), 1.0, atol=1e-3)
 
     with self.subTest("check_same_seed"):
-      same_samples = jax_func(np.array([0, 42]))
+      same_samples = jax_func(seed)
       self.assertAllClose(samples, same_samples)
 
     with self.subTest("check_diff_seed"):
-      diff_samples = jax_func(np.array([0, 47]))
+      another_seed = np.array([0, 47], dtype=np.int32)
+      diff_samples = jax_func(another_seed)
       self.assertNotAllClose(samples, diff_samples)
 
   @chex.variants(with_jit=True, without_jit=True)
@@ -1379,29 +1417,34 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
     def tf_func(seed):
       return tf.random.stateless_uniform(
           shape=(16, 7), seed=seed, dtype=tf.float32)
-    self._test_convert(tf_func, (np.array([0, 42]),), check_shape_only=True)
+
+    seed = np.array([0, 42], dtype=np.int32)
+    self._test_convert(tf_func, (seed,), check_shape_only=True)
 
     def raw_func(seed):
       key, counter = tf.raw_ops.StatelessRandomGetKeyCounter(seed=seed)
       return tf.raw_ops.StatelessRandomUniformV2(
           shape=(1000000, 7), key=key, counter=counter, alg=3, dtype=tf.float32)
-    self._test_convert(raw_func, (np.array([0, 42]),), check_shape_only=True)
+
+    seed = np.array([0, 42], dtype=np.int32)
+    self._test_convert(raw_func, (seed,), check_shape_only=True)
 
     with self.subTest("check_statistics"):
       jax_func = tf2jax.convert_functional(
-          tf.function(raw_func), np.array([0, 42]))
+          tf.function(raw_func, jit_compile=True), seed)
       jax_func = self.variant(jax_func)
-      samples = jax_func(np.array([0, 42]))
+      samples = jax_func(seed)
       for expected in np.linspace(0.1, 1, 10):
         actual = np.mean(samples < expected)
         self.assertAllClose(actual, expected, atol=1e-3)
 
     with self.subTest("check_same_seed"):
-      same_samples = jax_func(np.array([0, 42]))
+      same_samples = jax_func(seed)
       self.assertAllClose(samples, same_samples)
 
     with self.subTest("check_diff_seed"):
-      diff_samples = jax_func(np.array([0, 47]))
+      another_seed = np.array([0, 47], dtype=np.int32)
+      diff_samples = jax_func(another_seed)
       self.assertNotAllClose(samples, diff_samples)
 
   @chex.variants(with_jit=True, without_jit=True)
@@ -1409,7 +1452,9 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
     def tf_func(seed):
       return tf.random.stateless_uniform(
           shape=(16, 7), seed=seed, minval=0, maxval=10, dtype=tf.int32)
-    self._test_convert(tf_func, (np.array([0, 42]),), check_shape_only=True)
+
+    seed = np.array([0, 42], dtype=np.int32)
+    self._test_convert(tf_func, (seed,), check_shape_only=True)
 
     def raw_func(seed):
       key, counter = tf.raw_ops.StatelessRandomGetKeyCounter(seed=seed)
@@ -1420,23 +1465,26 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
           alg=3,
           minval=0,
           maxval=10)
-    self._test_convert(raw_func, (np.array([0, 42]),), check_shape_only=True)
+
+    seed = np.array([0, 42], dtype=np.int32)
+    self._test_convert(raw_func, (seed,), check_shape_only=True)
 
     with self.subTest("check_statistics"):
       jax_func = tf2jax.convert_functional(
-          tf.function(raw_func), np.array([0, 42]))
+          tf.function(raw_func, jit_compile=True), seed)
       jax_func = self.variant(jax_func)
-      samples = jax_func(np.array([0, 42]))
+      samples = jax_func(seed)
       for val in range(0, 10):
         actual = np.mean(samples == val)
         self.assertAllClose(actual, 0.1, atol=1e-3)
 
     with self.subTest("check_same_seed"):
-      same_samples = jax_func(np.array([0, 42]))
+      same_samples = jax_func(seed)
       self.assertAllClose(samples, same_samples)
 
     with self.subTest("check_diff_seed"):
-      diff_samples = jax_func(np.array([0, 47]))
+      another_seed = np.array([0, 47], dtype=np.int32)
+      diff_samples = jax_func(another_seed)
       self.assertNotAllClose(samples, diff_samples)
 
   @chex.variants(with_jit=True, without_jit=True)
@@ -1445,13 +1493,15 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
       key, counter = tf.raw_ops.StatelessRandomGetKeyCounter(seed=seed)
       return tf.raw_ops.StatelessRandomUniformFullIntV2(
           shape=(1000000, 7), key=key, counter=counter, alg=3, dtype=tf.int32)
-    self._test_convert(raw_func, (np.array([0, 42]),), check_shape_only=True)
+
+    seed = np.array([0, 42], dtype=np.int32)
+    self._test_convert(raw_func, (seed,), check_shape_only=True)
 
     with self.subTest("check_statistics"):
       jax_func = tf2jax.convert_functional(
-          tf.function(raw_func), np.array([0, 42]))
+          tf.function(raw_func, jit_compile=True), seed)
       jax_func = self.variant(jax_func)
-      samples = jax_func(np.array([0, 42]))
+      samples = jax_func(seed)
       int32_min = np.iinfo(np.int32).min
       int32_max = np.iinfo(np.int32).max
       for val in range(int32_min, int32_max, 200_000_000):
@@ -1460,29 +1510,29 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
         self.assertAllClose(actual, expected, atol=1e-3)
 
     with self.subTest("check_same_seed"):
-      same_samples = jax_func(np.array([0, 42]))
+      same_samples = jax_func(seed)
       self.assertAllClose(samples, same_samples)
 
     with self.subTest("check_diff_seed"):
-      diff_samples = jax_func(np.array([0, 47]))
+      another_seed = np.array([0, 47], dtype=np.int32)
+      diff_samples = jax_func(another_seed)
       self.assertNotAllClose(samples, diff_samples)
 
   @chex.variants(with_jit=True, without_jit=True)
   def test_stateless_multinomial(self):
-    inputs = np.array([np.arange(5), np.arange(5, 0, -1)], dtype=np.float32)
-
     def raw_func(logits, seed):
       return tf.raw_ops.StatelessMultinomial(
           logits=logits, num_samples=1000000, seed=seed, output_dtype=tf.int32)
 
-    self._test_convert(
-        raw_func, (inputs, np.array([0, 42])), check_shape_only=True)
+    inputs = np.array([np.arange(5), np.arange(5, 0, -1)], dtype=np.float32)
+    seed = np.array([0, 42], dtype=np.int32)
+    self._test_convert(raw_func, (inputs, seed), check_shape_only=True)
 
     with self.subTest("check_statistics"):
       jax_func = tf2jax.convert_functional(
-          tf.function(raw_func), inputs, np.array([0, 42]))
+          tf.function(raw_func, jit_compile=True), inputs, seed)
       jax_func = self.variant(jax_func)
-      samples = jax_func(inputs, np.array([0, 42]))
+      samples = jax_func(inputs, seed)
       for batch in range(inputs.shape[0]):
         probs = jax.nn.softmax(inputs[batch])
         samps = samples[batch]
@@ -1490,11 +1540,12 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
           self.assertAllClose(probs[idx], np.mean(samps == idx), atol=1e-3)
 
     with self.subTest("check_same_seed"):
-      same_samples = jax_func(inputs, np.array([0, 42]))
+      same_samples = jax_func(inputs, seed)
       self.assertAllClose(samples, same_samples)
 
     with self.subTest("check_diff_seed"):
-      diff_samples = jax_func(inputs, np.array([0, 47]))
+      another_seed = np.array([0, 47], dtype=np.int32)
+      diff_samples = jax_func(inputs, another_seed)
       self.assertNotAllClose(samples, diff_samples)
 
   @chex.variants(with_jit=True, without_jit=True)
@@ -1709,7 +1760,17 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
     @tf.function
     def while_loop(x):
       return tf.while_loop(cond, body, [x, step])
-    self._test_convert(while_loop, np.zeros(output_size, np.float32))
+
+    if jax.default_backend().lower() == "tpu":
+      tpu_context = self.assertRaisesRegex(
+          tf.errors.InvalidArgumentError,
+          ("Input 0 to node `while/ones` with op Fill must be a compile-time "
+           "constant."))
+    else:
+      tpu_context = contextlib.nullcontext()
+
+    with tpu_context:
+      self._test_convert(while_loop, np.zeros(output_size, np.float32))
 
   @chex.variants(with_jit=True, without_jit=True)
   def test_assign_side_effect(self):

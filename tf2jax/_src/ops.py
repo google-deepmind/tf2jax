@@ -1259,7 +1259,7 @@ def _reshape(proto):
 
 
 @register_operation("ResizeBilinear")
-def _resize_linear(proto):
+def _resize_bilinear(proto):
   """Parse a ResizeBilinear op."""
   _check_attrs(proto, {"T", "align_corners", "half_pixel_centers"})
 
@@ -1300,7 +1300,7 @@ def _resize_linear(proto):
         translation=translation,
         method="linear",
         antialias=False,
-        precision=None,
+        precision=config.get_config("resize_bilinear_precision"),
     )
 
   return _func

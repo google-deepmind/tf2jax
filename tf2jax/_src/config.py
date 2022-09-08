@@ -16,7 +16,7 @@
 
 import contextlib
 
-from typing import Any
+from typing import Any, Union
 
 _config = dict(
     strict_shape_check=True,
@@ -27,10 +27,12 @@ _config = dict(
     infer_relu_from_jax2tf=True,
     infer_cumulative_reduction_from_jax2tf=True,
     raise_on_prevent_gradient=True,
+    # TensorFlow uses high/highest precision on TPU.
+    resize_bilinear_precision="highest",
 )
 
 
-def get_config(name: str) -> bool:
+def get_config(name: str) -> Union[bool, str]:
   return _config[name]
 
 
