@@ -14,7 +14,6 @@
 # ==============================================================================
 """Tests for tf2jax."""
 
-import contextlib
 import itertools
 
 from typing import Tuple
@@ -26,6 +25,7 @@ import jax
 import numpy as np
 
 import tensorflow as tf
+from tf2jax._src import test_util
 from tf2jax._src import tf2jax
 import tree
 
@@ -34,23 +34,19 @@ def _parse_version(version: str) -> Tuple[int, ...]:
   return tuple([int(v) for v in version.split(".")])
 
 
-class OpsTest(tf.test.TestCase, parameterized.TestCase):
+class OpsTest(test_util.TestCase):
 
   def _test_convert(self,
                     tf_func,
                     inputs,
                     *,
                     check_shape_only=False,
-                    functional=True,
-                    tf_on_cpu=False):
+                    functional=True):
     if not isinstance(inputs, (list, tuple)):
       inputs = (inputs,)
 
-    tf_context = tf.device("/cpu:0") if tf_on_cpu else contextlib.nullcontext()
-
-    with tf_context:
-      jax_func, jax_params = tf2jax.convert(
-          tf.function(tf_func), *tree.map_structure(np.zeros_like, inputs))
+    jax_func, jax_params = tf2jax.convert(
+        tf_func, *tree.map_structure(np.zeros_like, inputs))
     if functional:
       self.assertEmpty(jax_params, "Expected no parameters for pure Ops.")
 
@@ -58,8 +54,7 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
 
     rng = jax.random.PRNGKey(42)
     jax_results, new_jax_params = jax_func(jax_params, *inputs, rng=rng)
-    with tf_context:
-      tf_results = tf_func(*inputs)
+    tf_results = tf_func(*inputs)
 
     # Check outputs
     for tf_res, jax_res in zip(
@@ -77,8 +72,12 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
         np.cov(np.random.normal(size=[5, 10]).astype(np.float32))
         for _ in range(3)
     ])
-    self._test_convert(
-        lambda x: tf.raw_ops.Cholesky(input=x), [inputs], tf_on_cpu=True)
+
+    @tf.function(jit_compile=True)
+    def cholesky(x):
+      return tf.raw_ops.Cholesky(input=x)
+
+    self._test_convert(cholesky, [inputs])
 
   @chex.variants(with_jit=True, without_jit=True)
   @parameterized.named_parameters(
@@ -98,12 +97,15 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
     np.random.seed(42)
     inputs = np.random.normal(size=shape).astype(np.float32)
 
+    # No XLA Eig kernel for CPU.
+    is_cpu = jax.default_backend() == "cpu"
+    @tf.function(jit_compile=not is_cpu)
     def eig(x):
       return tf.raw_ops.Eig(input=x, compute_v=compute_v, Tout=tf.complex64)
 
     tf_w, tf_v = eig(tf.constant(inputs))
 
-    jax_eig = tf2jax.convert_functional(tf.function(eig), np.zeros_like(inputs))
+    jax_eig = tf2jax.convert_functional(eig, np.zeros_like(inputs))
     jax_w, jax_v = self.variant(jax_eig)(inputs)
 
     # Check eigenvalues are sorted in non-descending order.
@@ -141,14 +143,13 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
     np.random.seed(42)
     inputs = np.random.normal(size=shape).astype(np.float32)
 
+    @tf.function(jit_compile=True)
     def eigh(x):
       return tf.raw_ops.SelfAdjointEigV2(input=x, compute_v=compute_v)
 
-    with tf.device("/cpu:0"):
-      tf_w, tf_v = eigh(tf.constant(inputs))
+    tf_w, tf_v = eigh(tf.constant(inputs))
 
-      jax_eigh = tf2jax.convert_functional(
-          tf.function(eigh), np.zeros_like(inputs))
+    jax_eigh = tf2jax.convert_functional(eigh, np.zeros_like(inputs))
     jax_w, jax_v = self.variant(jax_eigh)(inputs)
 
     self.assertTrue(np.all(tf_w[..., :-1] <= tf_w[..., 1:]))
@@ -162,11 +163,12 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
         self.assertAllClose(min(abs(w_jax[i] - w_tf)), 0., atol=1e-5)
 
     if compute_v:
+      tols = dict(atol=2e-5) if jax.default_backend() in "tpu" else {}
       sym_inputs = np.tril(inputs) + np.swapaxes(np.tril(inputs, -1), -2, -1)
       self.assertAllClose(
-          np.matmul(sym_inputs, tf_v), tf_w[..., None, :] * tf_v)
+          np.matmul(sym_inputs, tf_v), tf_w[..., None, :] * tf_v, **tols)
       self.assertAllClose(
-          np.matmul(sym_inputs, jax_v), jax_w[..., None, :] * jax_v)
+          np.matmul(sym_inputs, jax_v), jax_w[..., None, :] * jax_v, **tols)
 
   @chex.variants(with_jit=True, without_jit=True)
   @parameterized.named_parameters(
@@ -186,12 +188,13 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
     np.random.seed(42)
     inputs = np.random.normal(size=shape).astype(np.float32)
 
+    @tf.function(jit_compile=True)
     def qr(x):
       return tf.raw_ops.Qr(input=x, full_matrices=full_matrices)
 
     tf_q, tf_r = qr(tf.constant(inputs))
 
-    jax_qr = tf2jax.convert_functional(tf.function(qr), np.zeros_like(inputs))
+    jax_qr = tf2jax.convert_functional(qr, np.zeros_like(inputs))
     jax_q, jax_r = self.variant(jax_qr)(inputs)
 
     self.assertEqual(tf_q.shape, jax_q.shape)
@@ -218,13 +221,14 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
     np.random.seed(42)
     inputs = np.random.normal(size=shape).astype(np.float32)
 
+    @tf.function(jit_compile=True)
     def svd(x):
       return tf.raw_ops.Svd(
           input=x, compute_uv=compute_uv, full_matrices=full_matrices)
 
     tf_s, tf_u, tf_v = svd(tf.constant(inputs))
 
-    jax_svd = tf2jax.convert_functional(tf.function(svd), np.zeros_like(inputs))
+    jax_svd = tf2jax.convert_functional(svd, np.zeros_like(inputs))
     jax_s, jax_u, jax_v = self.variant(jax_svd)(inputs)
 
     self.assertEqual(tf_s.shape, jax_s.shape)
@@ -234,10 +238,11 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
 
     # https://numpy.org/doc/stable/reference/generated/numpy.linalg.svd.html)
     def reconstruct(u, s, v):
-      return tf.matmul(
-          u[..., :s.shape[-1]] * s[..., None, :],
-          v[..., :s.shape[-1]],
-          adjoint_b=True)
+      with tf.device("CPU"):
+        return tf.matmul(
+            u[..., :s.shape[-1]] * s[..., None, :],
+            v[..., :s.shape[-1]],
+            adjoint_b=True)
 
     # Adapted from tensorflow/python/kernel_tests/linalg/svd_op_test.py
     def compare_singular_vectors(x, y):
@@ -246,9 +251,10 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
       sum_of_ratios = np.sum(np.divide(y, x), -2, keepdims=True)
       phases = np.divide(sum_of_ratios, np.abs(sum_of_ratios))
       x = x * phases
-      self.assertAllClose(x, y, 1e-4)
+      self.assertAllClose(x, y, atol=1e-4)
 
-    self.assertAllClose(jax_s, tf_s)
+    tols = dict(atol=1e-5) if jax.default_backend() in ("gpu", "tpu") else {}
+    self.assertAllClose(jax_s, tf_s, **tols)
     if compute_uv:
       tf_recon = reconstruct(tf_u, tf_s, tf_v)
       jax_recon = reconstruct(jax_u, jax_s, jax_v)
@@ -285,6 +291,7 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
     inputs = np.random.normal(size=lhs_shape).astype(np.float32)
     rhs_inputs = np.random.normal(size=rhs_shape).astype(np.float32)
 
+    @tf.function(jit_compile=True)
     def triangular_solve(x, rhs):
       return tf.raw_ops.MatrixTriangularSolve(
           matrix=x, rhs=rhs, lower=lower, adjoint=adjoint)
@@ -292,7 +299,7 @@ class OpsTest(tf.test.TestCase, parameterized.TestCase):
     tf_res = triangular_solve(tf.constant(inputs), tf.constant(rhs_inputs))
 
     jax_triangular_solve = tf2jax.convert_functional(
-        tf.function(triangular_solve), np.zeros_like(inputs),
+        triangular_solve, np.zeros_like(inputs),
         np.zeros_like(rhs_inputs))
     jax_res = self.variant(jax_triangular_solve)(inputs, rhs_inputs)
 
