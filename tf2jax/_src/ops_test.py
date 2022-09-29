@@ -1795,6 +1795,35 @@ class OpsTest(test_util.TestCase):
       return tf.raw_ops.TopKV2(input=x, k=k, sorted=True)
     self._test_convert(top_k, inputs)
 
+  @chex.variants(with_jit=True, without_jit=True)
+  @parameterized.parameters((2., 2.), (2., 0.), (0., 0.), (0., 2.))
+  def test_div_no_nan(self, x, y):
+
+    @tf.function
+    def div_no_nan(inputs):
+      x, y = inputs
+      return tf.math.divide_no_nan(x=x, y=y)
+
+    x = np.array(x)
+    y = np.array(y)
+    tf_x = tf.convert_to_tensor(x)
+    tf_y = tf.convert_to_tensor(y)
+
+    with tf.GradientTape() as g:
+      g.watch(tf_x)
+      g.watch(tf_y)
+      output = div_no_nan([tf_x, tf_y])
+    tf_gradient = g.gradient(output, [tf_x, tf_y])
+
+    jax_func = tf2jax.convert_functional(div_no_nan, [x, y])
+    jax_func = self.variant(jax_func)
+    jax_gradient = jax.grad(jax_func)([x, y])
+
+    with self.subTest("check_forward_pass"):
+      self.assertAllClose(jax_func([x, y]), np.asarray(output))
+    with self.subTest("check_backward_pass"):
+      self.assertAllClose(jax_gradient, np.asarray(tf_gradient))
+
 
 if __name__ == "__main__":
   tf.test.main()

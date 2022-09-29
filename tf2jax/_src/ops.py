@@ -226,7 +226,7 @@ def _assert(proto):
 
   logging.warning("Assert has no effect.")
 
-  return lambda cond, data: _EMPTY_RETURN_VALUE
+  return lambda cond, *data: _EMPTY_RETURN_VALUE
 
 
 @register_operation("AvgPool")
@@ -556,6 +556,46 @@ def _depthwise_conv2d(proto):
         dimension_numbers=dimension_numbers,
         rhs_dilation=dilations,
         feature_group_count=lhs.shape[channel_index])
+
+  return _func
+
+
+def _div_no_nan_forward(x: jnp.ndarray, y: jnp.ndarray) -> jnp.ndarray:
+  """Computes a safe divide which returns 0 if y (denominator) is zero."""
+  div = anp.divide(x, y)
+  return jnp.where(y == 0.0, jnp.zeros_like(div), div)
+
+
+@register_operation("DivNoNan")
+def _div_no_nan(proto):
+  """Parse a DivNoNan op."""
+  _check_attrs(proto, {"T"})
+
+  @jax.custom_gradient
+  def _func(x: jnp.ndarray, y: jnp.ndarray) -> jnp.ndarray:
+
+    def _grad(g: jnp.ndarray) -> jnp.ndarray:
+      """Given upstream grad G and a Div op: Z = X/Y, the gradients are.
+
+        dX = G / Y
+        dY = -G*X / Y^2 = (X/Y) * -G / Y = -G*Z / Y
+
+      Following tensorflow/tensorflow/c/experimental/gradients/math_grad.cc
+      for handling NaNs.
+
+      Args:
+        g: Upstream gradient.
+
+      Returns:
+        forward value: div_no_nan(x, y)
+        grad: Gradient information in TF format.
+      """
+      output = _div_no_nan_forward(x, y)
+      dx = _div_no_nan_forward(g, y)
+      dy = _div_no_nan_forward(-g * output, y)
+      return dx, dy
+
+    return _div_no_nan_forward(x, y), _grad
 
   return _func
 
