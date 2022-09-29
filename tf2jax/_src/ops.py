@@ -784,14 +784,19 @@ def _gather_nd(proto):
   return _func
 
 
+@register_operation("ResourceGather")
 @register_operation("GatherV2")
 def _gather(proto):
   """Parse a GatherV2 Op."""
-  _check_attrs(proto, {"Taxis", "Tindices", "Tparams", "batch_dims"})
+  _check_attrs(proto, {
+      "Taxis", "Tindices", "Tparams", "batch_dims", "dtype", "validate_indices"
+  })
 
   batch_dims = proto.attr["batch_dims"].i
   if batch_dims < 0:
     raise ValueError(f"batch_dims={batch_dims} must be non-negative.")
+
+  # TODO(b/249826984) Add test for ResourceGather, dtype and validate_indices.
 
   def _func(
       params: jnp.ndarray,
