@@ -92,7 +92,6 @@ _jax_ops = {
     "Erfinv": _get_jax_op(jax.lax.erf_inv, {"T"}),
     "Exp": _get_jax_op(jnp.exp, {"T"}),
     "Expm1": _get_jax_op(jnp.expm1, {"T"}),
-    "ExpandDims": _get_jax_op(anp.expand_dims, {"T", "Tdim"}),
     "Floor": _get_jax_op(jnp.floor, {"T"}),
     "FloorMod": _get_jax_op(anp.mod, {"T"}),
     "FloorDiv": _get_jax_op(anp.floor_divide, {"T"}),
@@ -695,6 +694,17 @@ def _empty(proto):
   return _func
 
 
+@register_operation("ExpandDims")
+def _expand_dims(proto):
+  """Parse an ExpandDims Op."""
+  _check_attrs(proto, {"T", "Tdim"})
+
+  def _func(arr: jnp.ndarray, axis: jnp.ndarray) -> jnp.ndarray:
+    return anp.expand_dims(arr, axis=axis.tolist())
+
+  return _func
+
+
 @register_operation("Fill")
 def _fill(proto):
   """Parse an Fill op."""
@@ -801,7 +811,7 @@ def _gather(proto):
   def _func(
       params: jnp.ndarray,
       indices: jnp.ndarray,
-      axis: jnp.ndarray,
+      axis: jnp.ndarray = np.array(0, dtype=np.int32),
   ) -> jnp.ndarray:
     return anp.gather(
         params, indices, axis=axis.tolist(), batch_dims=batch_dims)
