@@ -21,6 +21,7 @@ from typing import Any, Callable, Optional, Mapping, Sequence, Set, Tuple
 from absl import logging
 
 import jax
+from jax._src.lax import control_flow as lax_control_flow
 import jax.numpy as jnp
 import numpy as np
 import tensorflow as tf
@@ -1933,6 +1934,19 @@ def _xla_gather(proto):
   ) -> jnp.ndarray:
     return jax.lax.gather(operand, start_indices, dimension_numbers,
                           slice_indices)
+
+  return _func
+
+
+@register_operation("XlaOptimizationBarrier")
+def _xla_optimization_barrier(proto):
+  """Parse a XlaOptimizationBarrier op."""
+  _check_attrs(proto, {"T"})
+
+  def _func(*operands: jnp.ndarray) -> Tuple[jnp.ndarray, ...]:
+    # TODO(b/241584320) Note this does not reproduce the remat transform in the
+    # forward pass, which may require some heurstics when parsing the graphdef.
+    return lax_control_flow.optimization_barrier_p.bind(*operands)
 
   return _func
 

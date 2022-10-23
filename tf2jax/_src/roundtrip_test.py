@@ -838,6 +838,38 @@ class Jax2TfTest(test_util.TestCase):
     inputs = np.linspace(-1., 1., 6, dtype=np.float32).reshape((2, 3))
     self.assertAllClose(tf.sin(tf_fn(inputs)), tf2jax2tf_fn(inputs))
 
+  @chex.variants(with_jit=True, without_jit=True)
+  @parameterized.named_parameters(
+      chex.params_product(
+          (("without_gradient", False), ("with_gradient", True)),
+          named=True,
+      ))
+  def test_remat(self, with_gradient):
+    def fn(x):
+      return jnp.sin(jnp.sin(x))
+    remat_fn = jax.checkpoint(fn)
+
+    inputs = (
+        np.linspace(0, 1, 10 * 5).reshape(10, 5),
+    )
+    self._test_convert(
+        remat_fn,
+        inputs,
+        with_grad=with_gradient,
+        enable_xla=True,
+        with_custom_grad=True)
+
+    # Check jaxpr.
+    tf_fn = tf.function(
+        jax2tf.convert(remat_fn, with_gradient=True, enable_xla=True))
+    jax_fn = tf2jax.convert_functional(tf_fn, tf.TensorSpec((10, 5),
+                                                            tf.float32))
+    jax_fn = self.variant(jax_fn)
+    out_jaxpr = jax.make_jaxpr(jax_fn)(*inputs)
+    self.assertNotRegex(str(out_jaxpr), "remat")
+    grad_jaxpr = jax.make_jaxpr(jax.grad(lambda x: jnp.sum(jax_fn(x))))(*inputs)
+    self.assertRegex(str(grad_jaxpr), "optimization_barrier")
+
 
 if __name__ == "__main__":
   absltest.main()
