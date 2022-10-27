@@ -168,6 +168,12 @@ _jax_ops = {
     "AssignSubVariableOp": _get_jax_op(jnp.subtract, {"dtype"}),
     "AssignVariableOp": _get_jax_op(
         lambda var, x: x, {"dtype", "validate_shape"}),
+    "RFFT":
+        _get_jax_op(lambda x, a: jnp.fft.rfft(x, a[0]), {"Tcomplex", "Treal"}),
+    "IRFFT":
+        _get_jax_op(lambda x, a: jnp.fft.irfft(x, a[0]), {"Tcomplex", "Treal"}),
+    "Angle":
+        _get_jax_op(jnp.angle, {"T", "Tout"}),
 }
 
 
@@ -1357,6 +1363,37 @@ def _resize_bilinear(proto):
         method="linear",
         antialias=False,
         precision=config.get_config("resize_bilinear_precision"),
+    )
+
+  return _func
+
+
+@register_operation("ResizeNearestNeighbor")
+def _resize_nearest_neighbor(proto):
+  """Parse a ResizeNearestNeighbor op."""
+  _check_attrs(proto, {"T", "align_corners", "half_pixel_centers"})
+
+  align_corners = proto.attr["align_corners"].b
+  half_pixel_centers = proto.attr["half_pixel_centers"].b
+
+  if align_corners or not half_pixel_centers:
+    # Not supported by tf.raw_ops.ResizeNearestNeighbor.
+    raise ValueError(
+        "Only align_corners=False and half_pixel_centers=True is supported.")
+
+  def _func(images: jnp.ndarray, size: jnp.ndarray) -> jnp.ndarray:
+    if len(images.shape) != 4:
+      raise ValueError(
+          "Expected A 4D tensor with shape [batch, height, width, channels], "
+          f"found {images.shape}")
+
+    inp_batch, _, _, inp_channels = images.shape
+    out_height, out_width = size.tolist()
+
+    return jax.image.resize(
+        images,
+        shape=(inp_batch, out_height, out_width, inp_channels),
+        method=jax.image.ResizeMethod.NEAREST,
     )
 
   return _func

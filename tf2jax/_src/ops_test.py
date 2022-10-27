@@ -1262,6 +1262,55 @@ class OpsTest(test_util.TestCase):
       _ = tf2jax.convert_functional(tf.function(resize_bilinear), images)
 
   @chex.variants(with_jit=True, without_jit=True)
+  @parameterized.named_parameters(
+      chex.params_product(
+          (("upper_sample", (10, 10)), ("down_sample", (5, 5))),
+          (
+              ("not_align_and_half", (False, True)),
+          ),
+          named=True,
+      ))
+  def test_resize_nearest_neighbor(self, size, align_and_half):
+    np.random.seed(42)
+    align, half_pixel = align_and_half
+
+    def resize_nearest_neighbor(imgs):
+      return tf.raw_ops.ResizeNearestNeighbor(
+          images=imgs,
+          size=size,
+          align_corners=align,
+          half_pixel_centers=half_pixel)
+
+    images = np.random.normal(size=(4, 7, 7, 3)).astype(np.float32)
+    self._test_convert(resize_nearest_neighbor, [images])
+
+  @parameterized.named_parameters(
+      chex.params_product(
+          (
+              ("align_and_half", (True, True)),
+              ("align_and_not_half", (True, False)),
+              ("not_align_and_not_half", (False, False)),
+          ),
+          named=True,
+      ))
+  def test_resize_nearest_neighbor_invalid(self, align_and_half):
+    np.random.seed(42)
+    align, half_pixel = align_and_half
+
+    def resize_nearest_neighbor(imgs):
+      return tf.raw_ops.ResizeNearestNeighbor(
+          images=imgs,
+          size=(10, 10),
+          align_corners=align,
+          half_pixel_centers=half_pixel)
+
+    images = np.random.normal(size=(4, 7, 7, 3)).astype(np.float32)
+    with self.assertRaisesRegex(
+        ValueError, "align_corners=False and half_pixel_centers=True"):
+      _ = tf2jax.convert_functional(tf.function(resize_nearest_neighbor),
+                                    images)
+
+  @chex.variants(with_jit=True, without_jit=True)
   def test_reverse(self):
     axis = (1, 0)
 
@@ -1823,6 +1872,30 @@ class OpsTest(test_util.TestCase):
       self.assertAllClose(jax_func([x, y]), np.asarray(output))
     with self.subTest("check_backward_pass"):
       self.assertAllClose(jax_gradient, np.asarray(tf_gradient))
+
+  @chex.variants(with_jit=True, without_jit=True)
+  def test_angle(self):
+    inputs = np.array([-2.25 + 4.75j, 3.25 + 5.75j], dtype=np.csingle)
+
+    def angle(x):
+      return tf.raw_ops.Angle(input=x)
+    self._test_convert(angle, inputs)
+
+  @chex.variants(with_jit=True, without_jit=True)
+  def test_rfft(self):
+    inputs = np.array([2.25, 3.25] * 2, dtype=np.single)
+
+    def rfft(x):
+      return tf.raw_ops.RFFT(input=x, fft_length=[len(x)])
+    self._test_convert(rfft, inputs)
+
+  @chex.variants(with_jit=True, without_jit=True)
+  def test_irfft(self):
+    inputs = np.array([-2.25 + 4.75j, 3.25 + 5.75j] * 2, dtype=np.csingle)
+
+    def irfft(x):
+      return tf.raw_ops.IRFFT(input=x, fft_length=[len(x)])
+    self._test_convert(irfft, inputs)
 
 
 if __name__ == "__main__":
