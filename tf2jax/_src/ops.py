@@ -1522,6 +1522,14 @@ def _squeeze(proto):
   return lambda x: anp.squeeze(x, axis=axis)
 
 
+@register_operation("StatelessRandomGetAlg")
+def _stateless_random_get_alg(proto):
+  _check_attrs(proto, set({}))
+  # Only jax.lax.rng_bit_generator allows users to choose the algorithm.
+  # So this will most likely be ignored.
+  return lambda: tf.random.Algorithm.AUTO_SELECT.value
+
+
 @register_operation("StatelessRandomGetKeyCounter")
 def _stateless_random_get_key_counter(proto):
   _check_attrs(proto, {"T", "Tseed"})

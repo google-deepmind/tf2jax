@@ -1428,6 +1428,18 @@ class OpsTest(test_util.TestCase):
     self._test_convert(split_static, [])
 
   @chex.variants(with_jit=True, without_jit=True)
+  def test_stateless_random_get_alg(self):
+
+    @tf.function
+    def tf_func():
+      return tf.raw_ops.StatelessRandomGetAlg()
+
+    jax_func = tf2jax.convert_functional(tf_func)
+    jax_alg = self.variant(jax_func)()
+
+    self.assertEqual(jax_alg, tf.random.Algorithm.AUTO_SELECT.value)
+
+  @chex.variants(with_jit=True, without_jit=True)
   def test_stateless_random_normal(self):
     def tf_func(seed):
       return tf.random.stateless_normal(
