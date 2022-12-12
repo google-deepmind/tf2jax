@@ -67,7 +67,7 @@ class Jax2TfTest(test_util.TestCase):
     # Jax -> TF
     tf_func = jax2tf.convert(jax_func, with_gradient=with_grad,
                              enable_xla=enable_xla)
-    tf_func = tf.function(tf_func, jit_compile=True)
+    tf_func = tf.function(tf_func, jit_compile=True, autograph=False)
     tf_outputs = tf_func(*inputs)
     jax.tree_map(self.assertAllClose, jax_outputs, tf_outputs)
 
@@ -453,7 +453,7 @@ class Jax2TfTest(test_util.TestCase):
               ("not_reverse", False),
           ),
           (
-              ("heurstic", True),
+              ("heuristic", True),
               ("no_heuristic", False),
           ),
           named=True,
@@ -474,7 +474,7 @@ class Jax2TfTest(test_util.TestCase):
     with config.override_config("infer_cumulative_reduction_from_jax2tf",
                                 use_heuristic):
       roundtrip_forward = tf2jax.convert_functional(
-          tf.function(jax2tf.convert(forward)), inputs)
+          tf.function(jax2tf.convert(forward), autograph=False), inputs)
       roundtrip_jaxpr = jax.make_jaxpr(roundtrip_forward)(inputs)
       if use_heuristic:
         self.assertNotIn("reduce_window", roundtrip_jaxpr.pretty_print())
@@ -621,7 +621,7 @@ class Jax2TfTest(test_util.TestCase):
     inputs = np.array(range(36), dtype=np.float32).reshape(9, 4)
 
     # TF
-    @tf.function
+    @tf.function(autograph=False)
     def forward(x):
       shape = tf.shape(x)
       # Manipulate polymoprhic shape.
@@ -633,8 +633,7 @@ class Jax2TfTest(test_util.TestCase):
     tf_outputs = forward(inputs)
 
     # TF -> JAX
-    jax_func = tf2jax.convert_functional(
-        tf.function(forward), tf.TensorSpec((None, 4)))
+    jax_func = tf2jax.convert_functional(forward, tf.TensorSpec((None, 4)))
     jax_func = self.variant(jax_func)
     jax_outputs = jax_func(inputs)
     self.assertAllClose(tf_outputs, jax_outputs)
@@ -645,7 +644,7 @@ class Jax2TfTest(test_util.TestCase):
         polymorphic_shapes=["(b, _)"],
         with_gradient=with_grad,
         enable_xla=enable_xla)
-    new_tf_forward = tf.function(new_tf_forward)
+    new_tf_forward = tf.function(new_tf_forward, autograph=False)
     concrete_new_tf_forward = new_tf_forward.get_concrete_function(
         tf.TensorSpec(shape=(None, 4)))
     self.assertEqual(concrete_new_tf_forward.structured_outputs.shape.as_list(),
@@ -678,7 +677,7 @@ class Jax2TfTest(test_util.TestCase):
     # JAX -> TF
     tf_forward = jax2tf.convert(
         forward, with_gradient=with_grad, enable_xla=enable_xla)
-    tf_forward = tf.function(tf_forward)
+    tf_forward = tf.function(tf_forward, autograph=False)
 
     # JAX -> TF -> JAX
     with config.override_config("convert_custom_gradient", True):
@@ -734,13 +733,13 @@ class Jax2TfTest(test_util.TestCase):
     # JAX -> TF
     tf_fn = jax2tf.convert(
         forward, with_gradient=with_grad, enable_xla=enable_xla)
-    tf_fn = tf.function(tf_fn)
+    tf_fn = tf.function(tf_fn, autograph=False)
 
     # JAX -> TF -> CALL_TF -> TF.
     # This creates dependencies between custom gradients.
     call_tf_fn = jax2tf.call_tf(tf_fn)
     tf_fn_too = jax2tf.convert(call_tf_fn, with_gradient=with_grad)
-    tf_fn_too = tf.function(tf_fn_too)
+    tf_fn_too = tf.function(tf_fn_too, autograph=False)
 
     # JAX -> TF -> CALL_TF -> TF -> JAX
     with config.override_config("convert_custom_gradient", True):
@@ -791,7 +790,7 @@ class Jax2TfTest(test_util.TestCase):
     # JAX -> TF
     tf_forward = jax2tf.convert(
         forward, with_gradient=True, enable_xla=enable_xla)
-    tf_forward = tf.function(tf_forward)
+    tf_forward = tf.function(tf_forward, autograph=False)
 
     # JAX -> TF -> JAX
     with config.override_config("convert_custom_gradient", True):
@@ -825,7 +824,7 @@ class Jax2TfTest(test_util.TestCase):
 
   @chex.variants(with_jit=True, without_jit=True)
   def test_jax2tf_nesting(self):
-    @tf.function
+    @tf.function(autograph=False)
     def tf_fn(x):
       return tf.cos(x)
 
@@ -834,6 +833,7 @@ class Jax2TfTest(test_util.TestCase):
       return jnp.sin(self.variant(jax_fn)(x))
 
     tf2jax2tf_fn = jax2tf.convert(tf2jax_fn)
+    tf2jax2tf_fn = tf.function(tf2jax2tf_fn, autograph=False)
 
     inputs = np.linspace(-1., 1., 6, dtype=np.float32).reshape((2, 3))
     self.assertAllClose(tf.sin(tf_fn(inputs)), tf2jax2tf_fn(inputs))
@@ -861,7 +861,8 @@ class Jax2TfTest(test_util.TestCase):
 
     # Check jaxpr.
     tf_fn = tf.function(
-        jax2tf.convert(remat_fn, with_gradient=True, enable_xla=True))
+        jax2tf.convert(remat_fn, with_gradient=True, enable_xla=True),
+        autograph=False)
     jax_fn = tf2jax.convert_functional(tf_fn, tf.TensorSpec((10, 5),
                                                             tf.float32))
     jax_fn = self.variant(jax_fn)
