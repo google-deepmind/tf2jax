@@ -22,6 +22,7 @@ from absl import logging
 
 import jax
 from jax._src.lax import control_flow as lax_control_flow
+from jax.experimental import checkify
 import jax.numpy as jnp
 import numpy as np
 import tensorflow as tf
@@ -349,6 +350,26 @@ def _cast(proto):
 
   def _func(x: jnp.ndarray) -> jnp.ndarray:
     return anp.asarray(x, dst_type)
+
+  return _func
+
+
+@register_operation("CheckNumerics")
+def _check_numerics(proto):
+  """Parse an CheckNumerics Op."""
+  _check_attrs(proto, {"T", "message"})
+
+  message = str(proto.attr["message"].s, "utf-8")
+
+  def _func(operand: jnp.ndarray) -> jnp.ndarray:
+    if config.get_config("enable_checkify_for_asserts"):
+      checkify.check(
+          jnp.logical_not(jnp.any(jnp.isnan(operand))),
+          f"{message} : Found NaN values.")
+      checkify.check(
+          jnp.logical_not(jnp.any(jnp.isinf(operand))),
+          f"{message} : Found Inf values.")
+    return operand
 
   return _func
 
@@ -697,6 +718,25 @@ def _empty(proto):
 
   def _func(shape: jnp.ndarray) -> jnp.ndarray:
     return anp.empty(shape=shape, dtype=dtype, init=init)
+
+  return _func
+
+
+@register_operation("EnsureShape")
+def _ensure_shape(proto):
+  """Parse an EnsureShape Op."""
+  _check_attrs(proto, {"T", "shape"})
+
+  shape = [dim.size for dim in proto.attr["shape"].shape.dim]
+
+  def is_compatible(x, s):
+    return x == -1 or s == -1 or x == s
+
+  def _func(x: jnp.ndarray) -> jnp.ndarray:
+    if (len(x.shape) != len(shape) or
+        not all(is_compatible(x, s) for x, s in zip(x.shape, shape))):
+      raise ValueError(f"Expected shape={shape}, found {x.shape}.")
+    return x
 
   return _func
 

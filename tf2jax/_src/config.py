@@ -29,6 +29,8 @@ _config = dict(
     raise_on_prevent_gradient=True,
     # TensorFlow uses high/highest precision on TPU.
     resize_bilinear_precision="highest",
+    # This is temporary until checkify supports debug mode.
+    enable_checkify_for_asserts=False,
 )
 
 

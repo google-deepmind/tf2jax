@@ -20,9 +20,11 @@ from absl.testing import parameterized
 
 import chex
 import jax
+from jax.experimental import checkify
 import numpy as np
 
 import tensorflow as tf
+from tf2jax._src import config
 from tf2jax._src import ops
 from tf2jax._src import test_util
 from tf2jax._src import tf2jax
@@ -360,6 +362,43 @@ class OpsTest(test_util.TestCase):
     self._test_convert(broadcast_to_static, [])
 
   @chex.variants(with_jit=True, without_jit=True)
+  @parameterized.named_parameters(
+      ("valid", np.array((3.14, 42.0), dtype=np.float32), None),
+      ("nan", np.array((np.nan, 42.0), dtype=np.float32), "Found NaN values"),
+      ("inf", np.array((3.14, np.inf), dtype=np.float32), "Found Inf values"),
+  )
+  def test_check_numerics(self, inputs, expected_message):
+
+    def check_numerics(x):
+      return tf.raw_ops.CheckNumerics(tensor=x, message="Checking")
+
+    with config.override_config("enable_checkify_for_asserts", False):
+      jax_fn = tf2jax.convert_functional(tf.function(check_numerics), inputs)
+      jax_fn = self.variant(jax_fn)
+      outputs = jax_fn(inputs)
+      if not expected_message:
+        self.assertAllClose(outputs, inputs)
+
+      checked_fn = checkify.checkify(jax_fn)
+      err, checked_outputs = checked_fn(inputs)
+      err.throw()  # Nothing to throw.
+      if not expected_message:
+        self.assertAllClose(checked_outputs, inputs)
+
+    with config.override_config("enable_checkify_for_asserts", True):
+      jax_fn = tf2jax.convert_functional(tf.function(check_numerics), inputs)
+      jax_fn = self.variant(jax_fn)
+
+      checked_fn = checkify.checkify(jax_fn)
+      err, checked_outputs = checked_fn(inputs)
+      if not expected_message:
+        self.assertAllClose(checked_outputs, inputs)
+      else:
+        with self.assertRaisesRegex(checkify.JaxRuntimeError,
+                                    f"Checking : {expected_message}"):
+          err.throw()
+
+  @chex.variants(with_jit=True, without_jit=True)
   def test_complex(self):
     reals = np.array([1.2, -2.3, 3.4], np.float32)
     imags = np.array([-4.5, 5.6, -6.7], np.float32)
@@ -609,6 +648,41 @@ class OpsTest(test_util.TestCase):
     def empty_static():
       return tf.zeros(empty())
     self._test_convert(empty_static, [])
+
+  @chex.variants(with_jit=True, without_jit=True)
+  @parameterized.named_parameters(
+      ("exact", (10, 5), (10, 5), True),
+      ("partial0", (10, None), (10, 5), True),
+      ("partial1", (None, 5), (10, 5), True),
+      ("partial2", (None, None), (10, 5), True),
+      ("too_small", (10,), (10,), False),
+      ("too_large", (10, 5, 3), (10, 5, 3), False),
+      ("incompatible0", (20, 5), (20, 5), False),
+      ("incompatible1", (10, 7), (10, 7), False),
+      ("incompatible2", (20, None), (20, 5), False),
+      ("incompatible3", (None, 7), (10, 7), False),
+  )
+  def test_ensure_shape(self, expected_shape, example_shape, valid):
+
+    def ensure_shape(x):
+      return tf.raw_ops.EnsureShape(
+          input=x, shape=tf.TensorShape(expected_shape))
+
+    valid_inputs = np.array(
+        range(np.prod(example_shape)), dtype=np.float32).reshape(example_shape)
+    self._test_convert(ensure_shape, [valid_inputs])
+
+    jax_fn = tf2jax.convert_functional(tf.function(ensure_shape), valid_inputs)
+    jax_fn = self.variant(jax_fn)
+
+    with config.override_config("strict_shape_check", False):
+      actual_inputs = np.array(range(50), dtype=np.float32).reshape((10, 5))
+      if valid:
+        outputs = jax_fn(actual_inputs)
+        self.assertAllClose(outputs, actual_inputs)
+      else:
+        with self.assertRaisesRegex(ValueError, "Expected shape="):
+          jax_fn(actual_inputs)
 
   @chex.variants(with_jit=True, without_jit=True)
   def test_fill(self):
