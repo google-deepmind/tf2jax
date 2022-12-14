@@ -207,6 +207,7 @@ def broadcast_to(arr, shape):
 concatenate = lambda arrs, axis: _get_np(*arrs).concatenate(arrs, axis=axis)
 expand_dims = lambda arr, axis: _get_np(arr).expand_dims(arr, axis=axis)
 flip = lambda arr, axis: _get_np(arr).flip(arr, axis=axis)
+roll = lambda arr, shift, axis: _get_np(arr).roll(arr, shift=shift, axis=axis)
 split = lambda arr, sections, axis: _get_np(arr).split(arr, sections, axis=axis)
 squeeze = lambda arr, axis: _get_np(arr).squeeze(arr, axis=axis)
 stack = lambda arrs, axis: _get_np(*arrs).stack(arrs, axis=axis)

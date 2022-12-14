@@ -1174,6 +1174,28 @@ class OpsTest(test_util.TestCase):
     self._test_convert(rank_static, [])
 
   @chex.variants(with_jit=True, without_jit=True)
+  @parameterized.named_parameters(
+      ("basic0", 2, 0),
+      ("basic1", -2, 1),
+      ("basic2", 0, 1),
+      ("single", (2,), (1,)),
+      ("double0", (2, -1), (0, 1)),
+      ("double1", (2, -1), (1, 0)),
+      ("dupe_axis", (2, 1), (1, 1)),
+  )
+  def test_roll(self, shift, axis):
+    inputs = np.array(range(1, 51)).reshape((10, 5))
+
+    def roll(x):
+      return tf.raw_ops.Roll(input=x, shift=shift, axis=axis)
+    self._test_convert(roll, inputs)
+
+    # Check static inputs result in static outputs.
+    def roll_static():
+      return tf.zeros(roll(inputs)[0])
+    self._test_convert(roll_static, [])
+
+  @chex.variants(with_jit=True, without_jit=True)
   def test_squeeze(self):
     inputs, dims = np.array([[[42], [47]]]), (0, 2)
 

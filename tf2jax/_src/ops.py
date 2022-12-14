@@ -1439,6 +1439,21 @@ def _resize_nearest_neighbor(proto):
   return _func
 
 
+@register_operation("Roll")
+def _roll(proto):
+  """Parse a Roll Op."""
+  _check_attrs(proto, {"T", "Tshift", "Taxis"})
+
+  def _func(
+      operand: jnp.ndarray,
+      shift: jnp.ndarray,
+      axis: jnp.ndarray,
+  ) -> jnp.ndarray:
+    return anp.roll(operand, shift=shift.tolist(), axis=axis.tolist())
+
+  return _func
+
+
 @register_operation("ScatterNd")
 def _scatter_nd(proto):
   """Parse a ScatterNd op."""
