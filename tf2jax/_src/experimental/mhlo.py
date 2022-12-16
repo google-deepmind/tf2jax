@@ -99,11 +99,18 @@ def mhlo_apply_lowering(ctx: mlir.LoweringRuleContext, *args, mhlo_text: str):
   assert program.program_shape().result_shape().is_tuple()
 
   module_ctx = ctx.module_context
-  mhlo_module = mlir.xla_computation_to_mhlo_module(program)
-  callee_name = mlir.merge_mhlo_modules(
-      dst_module=module_ctx.module,
-      sym_name=program_name,
-      src_module=mhlo_module)
+  if xc.mlir_api_version < 41:
+    mhlo_module = mlir.xla_computation_to_mhlo_module(program)
+    callee_name = mlir.merge_mhlo_modules(
+        dst_module=module_ctx.module,
+        sym_name=program_name,
+        src_module=mhlo_module)
+  else:
+    mhlo_module = mlir.xla_computation_to_mlir_module(program)
+    callee_name = mlir.merge_mlir_modules(
+        dst_module=module_ctx.module,
+        sym_name=program_name,
+        src_module=mhlo_module)
 
   output_types = tuple(map(mlir.aval_to_ir_types, ctx.avals_out))
   flat_output_types = util.flatten(output_types)
