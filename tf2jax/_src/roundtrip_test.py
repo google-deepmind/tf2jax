@@ -28,6 +28,7 @@ import tensorflow as tf
 from tf2jax._src import config
 from tf2jax._src import test_util
 from tf2jax._src import tf2jax
+from tf2jax._src.experimental import ops as experimental_ops  # pylint: disable=unused-import
 import tree
 
 from tensorflow.compiler.xla import xla_data_pb2  # pytype: disable=import-error
@@ -54,6 +55,14 @@ class Jax2TfTest(test_util.TestCase):
       with_custom_grad=False,
       grad_tols=None,
   ):
+    if jax.config.jax2tf_default_experimental_native_lowering:
+      if not enable_xla:
+        self.skipTest("native_lowering does not support enable_xla=False.")
+      if with_grad and not with_custom_grad:
+        self.skipTest(
+            "native_lowering does not support differentiation without custom "
+            "gradient.")
+
     grad_tols = grad_tols or {}
     def assert_grad_all_close(*args):
       return self.assertAllClose(*args, **grad_tols)
@@ -117,7 +126,7 @@ class Jax2TfTest(test_util.TestCase):
     def forward(x):
       return jnp.sin(jnp.cos(x))
 
-    inputs = np.random.normal((3, 2))
+    inputs = np.random.normal((3, 2)).astype(np.float32)
     self._test_convert(
         forward, [inputs],
         with_grad=with_grad,
@@ -476,7 +485,8 @@ class Jax2TfTest(test_util.TestCase):
       roundtrip_forward = tf2jax.convert_functional(
           tf.function(jax2tf.convert(forward), autograph=False), inputs)
       roundtrip_jaxpr = jax.make_jaxpr(roundtrip_forward)(inputs)
-      if use_heuristic:
+      if (use_heuristic and
+          not jax.config.jax2tf_default_experimental_native_lowering):
         self.assertNotIn("reduce_window", roundtrip_jaxpr.pretty_print())
 
       if (with_grad and enable_xla and reducer is jax.lax.cumprod and
@@ -618,6 +628,10 @@ class Jax2TfTest(test_util.TestCase):
           named=True,
       ))
   def test_polymorphic_shape(self, with_grad, enable_xla):
+    if jax.config.jax2tf_default_experimental_native_lowering:
+      if not enable_xla:
+        self.skipTest("native_lowering does not support enable_xla=False.e")
+
     inputs = np.array(range(36), dtype=np.float32).reshape(9, 4)
 
     # TF
@@ -660,6 +674,10 @@ class Jax2TfTest(test_util.TestCase):
           named=True,
       ))
   def test_custom_gradient(self, with_grad, enable_xla):
+    if jax.config.jax2tf_default_experimental_native_lowering:
+      if not enable_xla:
+        self.skipTest("native_lowering does not support enable_xla=False.")
+
     inputs = np.array(range(6), dtype=np.float32).reshape(3, 2)
 
     # JAX
@@ -715,6 +733,14 @@ class Jax2TfTest(test_util.TestCase):
           named=True,
       ))
   def test_custom_gradient_nested(self, with_grad, enable_xla):
+    if jax.config.jax2tf_default_experimental_native_lowering:
+      # TODO(b/261971806) ValueError: Error compiling TensorFlow function.
+      # call_tf can used in a staged context (under jax.jit, lax.scan, etc.)
+      # only with compileable functions with static output shapes.
+      self.skipTest("To be removed.")
+      if not enable_xla:
+        self.skipTest("native_lowering does not support enable_xla=False.")
+
     inputs = np.array(range(6), dtype=np.float32).reshape(3, 2)
 
     # JAX
@@ -773,6 +799,10 @@ class Jax2TfTest(test_util.TestCase):
           named=True,
       ))
   def test_empty_return(self, enable_xla):
+    if jax.config.jax2tf_default_experimental_native_lowering:
+      if not enable_xla:
+        self.skipTest("native_lowering does not support enable_xla=False.")
+
     np.random.seed(42)
 
     def forward(x):
@@ -850,7 +880,7 @@ class Jax2TfTest(test_util.TestCase):
     remat_fn = jax.checkpoint(fn)
 
     inputs = (
-        np.linspace(0, 1, 10 * 5).reshape(10, 5),
+        np.linspace(0, 1, 10 * 5, dtype=np.float32).reshape(10, 5),
     )
     self._test_convert(
         remat_fn,
@@ -858,6 +888,9 @@ class Jax2TfTest(test_util.TestCase):
         with_grad=with_gradient,
         enable_xla=True,
         with_custom_grad=True)
+
+    if jax.config.jax2tf_default_experimental_native_lowering:
+      self.skipTest("Skip remat jaxpr test with native_lowering.")
 
     # Check jaxpr.
     tf_fn = tf.function(
