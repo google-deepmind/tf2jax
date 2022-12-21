@@ -175,6 +175,21 @@ _jax_ops = {
         _get_jax_op(lambda x, a: jnp.fft.irfft(x, a[0]), {"Tcomplex", "Treal"}),
     "Angle":
         _get_jax_op(jnp.angle, {"T", "Tout"}),
+    "TensorListGetItem":
+        lambda x, i: x[i],
+    "TensorListSetItem":
+        lambda x, i, v: jnp.split(  # pylint: disable=g-long-lambda
+            jnp.where(
+                jnp.expand_dims(
+                    (jnp.indices([len(x)]) == i)[0],
+                    axis=list(range(1,
+                                    len(x[0].shape) + 1))),
+                v,
+                jnp.stack(x),
+            ),
+            indices_or_sections=len(x),
+            axis=0,
+        )
 }
 
 
