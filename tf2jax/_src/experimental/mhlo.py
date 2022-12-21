@@ -55,8 +55,7 @@ def _get_program(mhlo_text: str) -> Tuple[str, xc._xla.XlaComputation]:
 
 @functools.lru_cache(None)
 def _get_compiled_program(mhlo_text: str, backend: Any) -> Any:
-  _, program = _get_program(mhlo_text)
-  executable = backend.compile(program)
+  executable = backend.compile(mhlo_text)
   return executable
 
 
