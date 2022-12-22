@@ -16,7 +16,7 @@
 
 import dataclasses
 import functools
-from typing import Any, Callable, Optional, Mapping, Sequence, Set, Tuple
+from typing import Any, Callable, List, Optional, Mapping, Sequence, Set, Tuple
 
 from absl import logging
 
@@ -149,6 +149,8 @@ _jax_ops = {
     "Sub": _get_jax_op(anp.subtract, {"T"}),
     "Tan": _get_jax_op(jnp.tan, {"T"}),
     "Tanh": _get_jax_op(jnp.tanh, {"T"}),
+    "TensorListFromTensor": _get_jax_op(
+        lambda xs, element_shape: xs, {"element_dtype", "shape_type"}),
     "Tile": _get_jax_op(anp.tile, {"T", "Tmultiples"}),
     "UnsortedSegmentMax": _get_jax_op(
         functools.partial(jax.ops.segment_max, indices_are_sorted=False),
@@ -1856,6 +1858,88 @@ def _svd(proto):
       u, s, v = None, res, None
 
     return s, u, v
+
+  return _func
+
+
+@register_operation("TensorListGetItem")
+def _tensor_list_get_item(proto):
+  """Parse an TensorListGetItem Op."""
+  _check_attrs(proto, {"element_dtype"})
+
+  dtype = tf.as_dtype(proto.attr["element_dtype"].type)
+  dtype = anp.get_jax_dtype(dtype)
+
+  def _func(
+      xs: jnp.ndarray,
+      index: jnp.ndarray,
+      element_shape: jnp.ndarray,
+  ) -> jnp.ndarray:
+    assert xs.shape[1:] == tuple(element_shape.tolist())
+    assert xs.dtype == dtype
+    if isinstance(index, jax.Array):
+      xs = jnp.array(xs)
+    return xs[index]
+
+  return _func
+
+
+def _create_tensor_list(num_elements: List[int], shape: List[int], dtype: Any):
+  if not isinstance(shape, list):
+    # shape can be unspecified as -1.
+    shape = [max(0, shape)]
+  return np.zeros([num_elements] + shape, dtype=dtype)
+
+
+@register_operation("TensorListReserve")
+def _tensor_list_reserve(proto):
+  """Parse an TensorListReserve Op."""
+  _check_attrs(proto, {"element_dtype", "shape_type"})
+
+  dtype = tf.as_dtype(proto.attr["element_dtype"].type)
+  dtype = anp.get_jax_dtype(dtype)
+
+  def _func(shape: jnp.ndarray, num_elements: jnp.ndarray) -> jnp.ndarray:
+    return _create_tensor_list(
+        num_elements.tolist(), shape.tolist(), dtype=dtype)
+
+  return _func
+
+
+@register_operation("TensorListSetItem")
+def _tensor_list_set_item(proto):
+  """Parse an TensorListSetItem Op."""
+  _check_attrs(proto, {"element_dtype"})
+
+  dtype = tf.as_dtype(proto.attr["element_dtype"].type)
+  dtype = anp.get_jax_dtype(dtype)
+
+  def _func(
+      xs: jnp.ndarray,
+      index: jnp.ndarray,
+      item: jnp.ndarray,
+  ) -> jnp.ndarray:
+    if len(xs.shape) == 2 and xs.shape[-1] == 0:
+      xs = _create_tensor_list(xs.shape[0], list(item.shape), dtype=dtype)
+    if isinstance(index, jax.Array):
+      xs = jnp.array(xs)
+    return xs.at[index].set(item)
+
+  return _func
+
+
+@register_operation("TensorListStack")
+def _tensor_list_stack(proto):
+  """Parse an TensorListStack Op."""
+  _check_attrs(proto, {"element_dtype", "num_elements"})
+
+  dtype = tf.as_dtype(proto.attr["element_dtype"].type)
+  dtype = anp.get_jax_dtype(dtype)
+
+  def _func(xs: jnp.ndarray, shape: jnp.ndarray) -> jnp.ndarray:
+    if len(xs.shape) == 2 and xs.shape[-1] == 0:
+      xs = _create_tensor_list(xs.shape[0], shape.tolist(), dtype=dtype)
+    return xs
 
   return _func
 

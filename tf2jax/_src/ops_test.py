@@ -1754,6 +1754,20 @@ class OpsTest(test_util.TestCase):
     self._test_convert(switch_fn, [np.array(1, dtype=np.int32)])
 
   @chex.variants(with_jit=True, without_jit=True)
+  def test_tensor_list(self):
+    def tensor_list_fn():
+      return tf.map_fn(
+          fn=lambda t: tf.ones((5, 4), dtype=tf.int32) * t,
+          elems=tf.constant([3, 5, 2]),
+          # This is required at the moment, otherwise the initial TensorList
+          # will have a different shape (0,) than the actual output.
+          # May require additional hacks before the while loop.
+          fn_output_signature=tf.TensorSpec((5, 4), tf.int32),
+      )
+
+    self._test_convert(tensor_list_fn, [])
+
+  @chex.variants(with_jit=True, without_jit=True)
   @parameterized.named_parameters(
       chex.params_product(
           (
