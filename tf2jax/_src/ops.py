@@ -16,7 +16,7 @@
 
 import dataclasses
 import functools
-from typing import Any, Callable, List, Optional, Mapping, Sequence, Set, Tuple
+from typing import Any, Callable, List, Optional, Mapping, Sequence, Set, Tuple, Union
 
 from absl import logging
 
@@ -1741,6 +1741,18 @@ class _StatelessWhile(_HigherOrderFunction):
       outputs = tuple([outputs[idx] for idx in trace_idxs])
       return outputs + (key,)
 
+    def maybe_initialise(arg, spec):
+      # TensorList inputs can be uninitialized.
+      if isinstance(spec, jax.ShapeDtypeStruct) and arg.size == 0:
+        return jnp.zeros(shape=spec.shape, dtype=spec.dtype)
+      else:
+        return arg
+
+    output_specs = jax.eval_shape(real_body, trace_args + (rng,))
+    trace_args = tuple(
+        maybe_initialise(arg, spec)
+        for arg, spec in zip(trace_args, output_specs))
+
     outputs = jax.lax.while_loop(real_cond, real_body, trace_args + (rng,))
     *outputs, _ = outputs  # Drop rng.
     outputs = _merge_args(const_idxs_args, tuple(zip(trace_idxs, outputs)))
@@ -1875,8 +1887,9 @@ def _tensor_list_get_item(proto):
       index: jnp.ndarray,
       element_shape: jnp.ndarray,
   ) -> jnp.ndarray:
-    assert xs.shape[1:] == tuple(element_shape.tolist())
     assert xs.dtype == dtype
+    if xs.size == 0:
+      return np.zeros(element_shape, dtype=dtype)
     if isinstance(index, jax.Array):
       xs = jnp.array(xs)
     return xs[index]
@@ -1884,10 +1897,16 @@ def _tensor_list_get_item(proto):
   return _func
 
 
-def _create_tensor_list(num_elements: List[int], shape: List[int], dtype: Any):
+def _create_tensor_list(
+    num_elements: int,
+    shape: Union[int, List[int]],
+    dtype: Any,
+) -> np.ndarray:
+  """Create a tensor corresponding to a stacked tensor list."""
   if not isinstance(shape, list):
-    # shape can be unspecified as -1.
-    shape = [max(0, shape)]
+    shape = [shape]
+  # shape can be unspecified as -1.
+  shape = [max(0, sz) for sz in shape]
   return np.zeros([num_elements] + shape, dtype=dtype)
 
 
@@ -1919,7 +1938,8 @@ def _tensor_list_set_item(proto):
       index: jnp.ndarray,
       item: jnp.ndarray,
   ) -> jnp.ndarray:
-    if len(xs.shape) == 2 and xs.shape[-1] == 0:
+    assert xs.shape
+    if xs.size == 0:
       xs = _create_tensor_list(xs.shape[0], list(item.shape), dtype=dtype)
     if isinstance(index, jax.Array):
       xs = jnp.array(xs)
@@ -1937,7 +1957,7 @@ def _tensor_list_stack(proto):
   dtype = anp.get_jax_dtype(dtype)
 
   def _func(xs: jnp.ndarray, shape: jnp.ndarray) -> jnp.ndarray:
-    if len(xs.shape) == 2 and xs.shape[-1] == 0:
+    if xs.size == 0:
       xs = _create_tensor_list(xs.shape[0], shape.tolist(), dtype=dtype)
     return xs
 

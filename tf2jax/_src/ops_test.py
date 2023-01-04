@@ -1754,15 +1754,36 @@ class OpsTest(test_util.TestCase):
     self._test_convert(switch_fn, [np.array(1, dtype=np.int32)])
 
   @chex.variants(with_jit=True, without_jit=True)
-  def test_tensor_list(self):
+  @parameterized.named_parameters(
+      ("defined", (3, 2)),
+      ("partial0", (-1, 2)),
+      ("partial1", (3, -1)),
+      ("undefined", -1)
+  )
+  def test_tensor_list_get_item(self, init_shape):
+    @tf.function(jit_compile=False)
+    def tensor_list_fn():
+      handle = tf.raw_ops.TensorListReserve(
+          element_shape=init_shape, num_elements=3, element_dtype=tf.int32)
+      return tf.raw_ops.TensorListGetItem(
+          input_handle=handle,
+          index=1,
+          element_shape=(3, 2),
+          element_dtype=tf.int32)
+
+    self._test_convert(tensor_list_fn, [])
+
+  @chex.variants(with_jit=True, without_jit=True)
+  @parameterized.named_parameters(
+      ("defined", dict(fn_output_signature=tf.TensorSpec((5, 4), tf.int32))),
+      ("undefined", {})
+  )
+  def test_tensor_list(self, output_signature_kwargs):
     def tensor_list_fn():
       return tf.map_fn(
           fn=lambda t: tf.ones((5, 4), dtype=tf.int32) * t,
           elems=tf.constant([3, 5, 2]),
-          # This is required at the moment, otherwise the initial TensorList
-          # will have a different shape (0,) than the actual output.
-          # May require additional hacks before the while loop.
-          fn_output_signature=tf.TensorSpec((5, 4), tf.int32),
+          **output_signature_kwargs,
       )
 
     self._test_convert(tensor_list_fn, [])
