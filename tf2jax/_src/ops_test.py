@@ -1717,6 +1717,7 @@ class OpsTest(test_util.TestCase):
       ("shrink0", lambda x: x[..., 2, 3]),
       ("shrink1", lambda x: x[2:, 3, :, 5]),
       ("mixed0", lambda x: x[..., 4:1:-1, tf.newaxis, 3]),
+      ("zero_slice", lambda x: x[:, :0, ...]),
   )
   def test_strided_slice(self, slice_fn):
     inputs = np.linspace(0., 1., 4 * 5 * 6 * 7).astype(np.float32)
