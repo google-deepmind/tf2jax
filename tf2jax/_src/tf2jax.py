@@ -355,21 +355,26 @@ def convert_functional_from_restored(tf_func: Any) -> AnnotatedFunction:
 def convert_from_restored(
     tf_func) -> Tuple[AnnotatedFunction, Mapping[str, Variable]]:
   """Converts a RestoredFunction (from a SaveModel) if it is unambiguous."""
-  concrete_functions = getattr(tf_func, "concrete_functions", ())
-  if len(concrete_functions) != 1:
-    err_message = (
-        f"Found {len(concrete_functions)} concrete functions, use "
-        "tf2jax.convert or tf2jax.convert_functional with *args and **kwargs "
-        "to select one of the options above.")
-    saved_model_err_message = ""
-    try:
-      # Deliberately trigger pretty error message from SavedModel.
-      tf_func(None)
-    except ValueError as e:
-      saved_model_err_message = str(e)
-    raise ValueError(saved_model_err_message + "\n\n" + err_message)
+  if tf_func.input_signature is None:
+    concrete_functions = getattr(tf_func, "concrete_functions", ())
+    if len(concrete_functions) != 1:
+      err_message = (
+          f"Found {len(concrete_functions)} concrete functions, use "
+          "tf2jax.convert or tf2jax.convert_functional with *args and **kwargs "
+          "to select one of the options above.")
+      saved_model_err_message = ""
+      try:
+        # Deliberately trigger pretty error message from SavedModel.
+        tf_func(None)
+      except ValueError as e:
+        saved_model_err_message = str(e)
+      raise ValueError(saved_model_err_message + "\n\n" + err_message)
 
-  args, kwargs = concrete_functions[0].structured_input_signature
+    args, kwargs = concrete_functions[0].structured_input_signature
+  else:
+    args = tf_func.input_signature
+    kwargs = {}
+
   return convert(tf_func, *args, **kwargs)
 
 
