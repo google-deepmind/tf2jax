@@ -114,7 +114,7 @@ jax_func = tf2jax.convert_functional(forward, np.zeros_like(x))
 jax_outputs = jax_func(x)
 ```
 
-## Randomess and PRNG Keys
+## Randomness and PRNG Keys
 
 A TensorFlow function that make use of random ops will be converted to a JAX
 function that takes a PRNG key as a keyword-only argument. TF2JAX will

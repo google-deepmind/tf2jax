@@ -109,7 +109,8 @@ class OpsTest(test_util.TestCase):
     jax_w, jax_v = self.variant(jax_eig)(inputs)
 
     # Check eigenvalues are sorted in non-descending order.
-    # TODO(b/239787164) Temporarily disabled.
+    # This used to be true but never guarranteed for general non-symmetric
+    # matrices (b/239787164).
     # self.assertTrue(
     #     np.all((np.absolute(tf_w)[..., :-1] -
     #             np.absolute(tf_w)[..., 1:]) < 1e-5))

@@ -284,7 +284,7 @@ def _bias_add(proto):
   if data_format == "NHWC":
     expand_axis_fn = lambda x: [d for d in range(x.ndim) if d != x.ndim - 1]
   elif data_format == "NCHW":
-    # TODO(shaobohou) this seems wrong but matches TF behaviour.
+    # TODO(b/266553458) this seems wrong but matches TF behaviour.
     expand_axis_fn = lambda x: [d for d in range(x.ndim) if d != 1]
   else:
     raise ValueError(f"Found unsupported data format {data_format}.")
@@ -981,7 +981,7 @@ def _batch_matmul(proto):
   adj_x = proto.attr["adj_x"].b
   adj_y = proto.attr["adj_y"].b
 
-  # TODO(shaobohou) Add test for arrays with complex values.
+  # TODO(b/266553251) Add test for arrays with complex values.
   def _func(x: jnp.ndarray, y: jnp.ndarray) -> jnp.ndarray:
     if adj_x:
       x = jnp.conjugate(jnp.swapaxes(x, -1, -2))
@@ -1201,7 +1201,6 @@ class _PartitionedCall(_HigherOrderFunction):
     return inner_fn(*args, rng=rng)
 
 
-# TODO(shaobohou) Add test for StatefulPartitionedCall.
 @register_operation("StatefulPartitionedCall")
 @register_operation("PartitionedCall")
 def _partitioned_call(proto):
@@ -1211,7 +1210,7 @@ def _partitioned_call(proto):
 
   inner_fn = proto.attr["f"].func.name
   op_config = str(proto.attr["config"].s, "utf-8")
-  op_config_proto = proto.attr["config_proto"].s  # TODO(shaobohou) decode this?
+  op_config_proto = proto.attr["config_proto"].s
   executor_type = str(proto.attr["executor_type"].s, "utf-8")
   del op_config, op_config_proto, executor_type
 
@@ -1635,7 +1634,7 @@ def _stateless_random_normal_v2(proto):
       counter: jnp.ndarray,
       alg: jnp.ndarray,
   ) -> jnp.ndarray:
-    del counter, alg  # TODO(shaobohou) combine key and counter?
+    del counter, alg  # TODO(b/266553394) combine key and counter?
     return jax.random.normal(key=key, shape=shape, dtype=jax_dtype)
 
   return _func
@@ -1655,7 +1654,7 @@ def _stateless_random_uniform_v2(proto):
       counter: jnp.ndarray,
       alg: jnp.ndarray,
   ) -> jnp.ndarray:
-    del counter, alg  # TODO(shaobohou) combine key and counter?
+    del counter, alg  # TODO(b/266553394) combine key and counter?
     return jax.random.uniform(key=key, shape=shape, dtype=jax_dtype)
 
   return _func
@@ -1678,7 +1677,7 @@ def _stateless_random_uniform_int_v2(proto):
       minval: jnp.ndarray = jnp.iinfo(jax_dtype).min,
       maxval: jnp.ndarray = jnp.iinfo(jax_dtype).max,
   ) -> jnp.ndarray:
-    del counter, alg  # TODO(shaobohou) combine key and counter?
+    del counter, alg  # TODO(b/266553394) combine key and counter?
     return jax.random.randint(
         key=key, shape=shape, minval=minval, maxval=maxval, dtype=jax_dtype,)
 
@@ -1766,8 +1765,6 @@ def _stateless_while(proto):
   """Parse a StatelessWhile op."""
   _check_attrs(proto,
                {"T", "body", "cond", "parallel_iterations", "output_shapes"})
-  # TODO(shaobohou) Check proto.arg_attr?
-
   body_name = proto.attr["body"].func.name
   cond_name = proto.attr["cond"].func.name
   parallel_iterations = proto.attr["parallel_iterations"].i
@@ -1835,7 +1832,7 @@ def _strided_slice(proto):
             slices.append(slice(beg_dim, end_dim, stride))
         dim += 1
 
-    # TODO(shaobohou) Handle stride=1 slicing along polymoprhic dimensions.
+    # TODO(b/266553742) Handle stride=1 slicing along polymoprhic dimensions.
     return x[tuple(slices)]
 
   return _func
@@ -2506,7 +2503,7 @@ class _XlaSelectAndScatter(_HigherOrderFunction):
       raise ValueError(
           f"Only Add is supported as scatter function, found {scatter_jaxpr}.")
 
-    # TODO(shaobohou) Support jax.lax.add for AvgPool.
+    # TODO(b/266553393) Support jax.lax.add for AvgPool.
     select_primitives = {
         jax.lax.ge_p: (-jnp.inf, jax.lax.max),
         jax.lax.le_p: (jnp.inf, jax.lax.min),

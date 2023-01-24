@@ -231,7 +231,7 @@ class _OpNode:
 
     # Return updated variables.
     if self.op in _TF_ASSIGN_OPS:
-      # TODO(shaobohou) This assumes the assign op returns the updated value.
+      # This assumes the assign op returns the updated value.
       updated_params = {named_args[0][0]: outputs}
     else:
       updated_params = {}
@@ -467,8 +467,8 @@ def convert(
   flat_outputs = tree.flatten(concrete_func.outputs)
   structured_outputs = tree.map_structure(maybe_tensor_to_spec,
                                           concrete_func.structured_outputs)
-  # TODO(shaobohou) We do not check the number of output tensors because they do
-  # not match for custom gradients functions.
+  # We do not check the number of output tensors because they do not match for
+  # custom gradients functions.
   structured_outputs = _fix_tfhub_specs(structured_outputs, flat_outputs)
   try:
     fullargspec = tf_func.function_spec.fullargspec
@@ -484,7 +484,7 @@ def convert(
       raise ValueError("If function_spec is None then only keyword arguments "
                        f"are expectd, found args={exp_args} in structure.")
     parameters = tuple([
-        # TODO(shaobohou) Remove temporary fix for TF-Hub.
+        # TODO(b/266552275) Remove temporary fix for TF-Hub.
         inspect.Parameter(
             k.replace("$", "___"), kind=inspect.Parameter.KEYWORD_ONLY)
         for k in tree.flatten(exp_kwargs.keys())
@@ -869,7 +869,7 @@ def _convert(
   input_path_to_specs = [(p, v)
                          for p, v in tree.flatten_with_path(structured_inputs)
                          if v is not _UNUSED_INPUT]
-  # TODO(shaobohou) Remove temporary fix for TF-Hub.
+  # TODO(b/266552275) Remove temporary fix for TF-Hub.
   replace_fn = (lambda k: k.replace("$", "___") if isinstance(k, str) else k)
   input_path_to_specs = [
       (tree.map_structure(replace_fn, p), v) for p, v in input_path_to_specs
@@ -962,7 +962,6 @@ def _convert(
     for _, subgraph in subgraphs.items():
       nodes = subgraph.rewrite(nodes)
 
-  # TODO(shaobohou) restore some sort of signature
   def jax_func(
       params: Mapping[str, jnp.ndarray],
       *func_args,
@@ -1144,7 +1143,7 @@ def _filter_nodes(
       yield node, graph
   if hasattr(graph_def, "library"):
     for func in graph_def.library.function:
-      # TODO(shaobohou) Use the public API once it is available.
+      # TODO(b/266553384) Use the public API once it is available.
       library_fn = graph._functions[func.signature.name]  # pylint: disable=protected-access
       for node in func.node_def:
         if predicate(node):
