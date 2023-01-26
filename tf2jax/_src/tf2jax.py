@@ -779,8 +779,8 @@ def _infer_relu_from_jax2tf(nodes):
         node.jax_func = (
             ops.get_parser("Relu")(_NodeDef("Relu", node.name, (), {})))
         if not found_jax2tf:
-          raise ValueError("Replaced max(x, 0) with jax.nn.relu but did not "
-                           "find jax2tf_out.")
+          logging.warning("Replaced max(x, 0) with jax.nn.relu but did not "
+                          "find jax2tf_out.")
 
 
 _FunctionDef = Any
