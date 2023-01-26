@@ -764,20 +764,23 @@ def _infer_relu_from_jax2tf(nodes):
   found_jax2tf = any(["jax2tf_out" in n.name for n in nodes])
   node_map = {n.name: n for n in nodes}
   for node in nodes:
-    if node.op == "Maximum":
-      cast_arg = node_map[node.inputs[1].op_name]
-      if cast_arg.op == "Cast":
-        const_arg = node_map[cast_arg.inputs[0].op_name]
-        if const_arg.op == "Const" and const_arg((), rng=None)[0].tolist() == 0:
-          # Replace the Maximum op with a Relu op, but keep the node name.
-          # The Cast and Const ops may now be redundant but are kept anyway.
-          node.op = "Relu"
-          node.inputs = node.inputs[:1]
-          node.jax_func = (
-              ops.get_parser("Relu")(_NodeDef("Relu", node.name, (), {})))
-          if not found_jax2tf:
-            logging.warning("Replaced max(x, 0) with jax.nn.relu but did not "
-                            "find jax2tf_out.")
+    if node.op == "Maximum" and "jax2tf" in node.name and "_relu_" in node.name:
+      cast_or_const_arg = node_map[node.inputs[1].op_name]
+      if cast_or_const_arg.op == "Cast":
+        const_arg = node_map[cast_or_const_arg.inputs[0].op_name]
+      else:
+        const_arg = cast_or_const_arg
+
+      if const_arg.op == "Const" and const_arg((), rng=None)[0].tolist() == 0:
+        # Replace the Maximum op with a Relu op, but keep the node name.
+        # The Cast and Const ops may now be redundant but are kept anyway.
+        node.op = "Relu"
+        node.inputs = node.inputs[:1]
+        node.jax_func = (
+            ops.get_parser("Relu")(_NodeDef("Relu", node.name, (), {})))
+        if not found_jax2tf:
+          raise ValueError("Replaced max(x, 0) with jax.nn.relu but did not "
+                           "find jax2tf_out.")
 
 
 _FunctionDef = Any
