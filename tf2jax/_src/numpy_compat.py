@@ -67,15 +67,18 @@ _NP_LIKES = (np.ndarray, np.number, np.bool_, bool, int, float)
 
 # We avoids importing jax2tf.shape_poly.is_poly_dim as jax2tf often depends
 # on the most recent tensorflow version.
-def _is_poly_dim(x):
+# This should reflect is_poly_dim() at
+# https://github.com/google/jax/blob/main/jax/experimental/jax2tf/shape_poly.py#L676
+def is_poly_dim(x):
   cls = type(x)
   return (cls.__module__ == "jax.experimental.jax2tf.shape_poly" and
-          cls.__name__ == "_DimPolynomial")
+          # _DimPolynomial is for backward compatibility.
+          cls.__name__ in ("_DimExpr", "_DimPolynomial"))
 
 
 def _get_np(*args):
   """Select numpy backend based on input types."""
-  no_jax = all((isinstance(x, _NP_LIKES) or _is_poly_dim(x)) for x in args)
+  no_jax = all((isinstance(x, _NP_LIKES) or is_poly_dim(x)) for x in args)
   return np if no_jax else jnp
 
 
@@ -122,7 +125,7 @@ def arange(start, stop, step, dtype: tf.DType):
 
 
 def asarray(arr, dtype: tf.DType):
-  if _is_poly_dim(arr):
+  if is_poly_dim(arr):
     arr = jax.core.dimension_as_value(arr)
   dtype = _get_dtypes(arr)[dtype]
   return _get_np(arr).asarray(arr, dtype)
@@ -201,7 +204,7 @@ def sum_(arr, axis: Union[int, Sequence[int]], keepdims: bool):
 
 # Array manipulation ops.
 def broadcast_to(arr, shape):
-  np_ = jnp if any([_is_poly_dim(x) for x in shape]) else _get_np(arr)
+  np_ = jnp if any([is_poly_dim(x) for x in shape]) else _get_np(arr)
   return np_.broadcast_to(arr, shape)
 
 concatenate = lambda arrs, axis: _get_np(*arrs).concatenate(arrs, axis=axis)

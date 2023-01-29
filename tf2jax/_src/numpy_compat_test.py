@@ -17,6 +17,8 @@
 from absl.testing import absltest
 from absl.testing import parameterized
 
+import jax
+from jax.experimental import jax2tf
 import jax.numpy as jnp
 import numpy as np
 import tensorflow as tf
@@ -43,6 +45,17 @@ class NumpyCompatTest(parameterized.TestCase):
         self.assertIs(dtype_map[src], jnp.bfloat16)
       else:
         self.assertIs(dtype_map[src], getattr(np_module, dst))
+
+  def test_is_poly_dim(self):
+    @jax.jit
+    def jax_func(x):
+      self.assertTrue(numpy_compat.is_poly_dim(x.shape[0]))
+      self.assertEqual(x.shape[1], 4)
+      return x + 3.14
+
+    tf_func = jax2tf.convert(jax_func, polymorphic_shapes=["(b, _)"])
+    tf_forward = tf.function(tf_func, autograph=False)
+    tf_forward.get_concrete_function(tf.TensorSpec(shape=(None, 4)))
 
 
 if __name__ == "__main__":
