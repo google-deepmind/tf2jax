@@ -626,11 +626,15 @@ class Jax2TfTest(test_util.TestCase):
           (("without_gradient", False), ("with_gradient", True)),
           (("disable_xla", False), ("enable_xla", True)),
           named=True,
-      ))
+      )
+  )
   def test_polymorphic_shape(self, with_grad, enable_xla):
     if jax.config.jax2tf_default_experimental_native_lowering:
       if not enable_xla:
-        self.skipTest("native_lowering does not support enable_xla=False.e")
+        self.skipTest("native_lowering does not support enable_xla=False.")
+      if enable_xla:
+        # TODO(b/267480040): Clean this up accordingly.
+        self.skipTest("re-enable after shape refinement is finished.")
 
     inputs = np.array(range(36), dtype=np.float32).reshape(9, 4)
 
