@@ -99,11 +99,11 @@ def mhlo_apply_lowering(ctx: mlir.LoweringRuleContext, *args, mhlo_text: str):
 
   module_ctx = ctx.module_context
   if xc.mlir_api_version < 41:
-    mhlo_module = mlir.xla_computation_to_mhlo_module(program)
+    mhlo_module = mlir.xla_computation_to_mhlo_module(program)  # type: ignore
     callee_name = mlir.merge_mhlo_modules(
         dst_module=module_ctx.module,
         sym_name=program_name,
-        src_module=mhlo_module)
+        src_module=mhlo_module)  # type: ignore
   else:
     mhlo_module = mlir.xla_computation_to_mlir_module(program)
     callee_name = mlir.merge_mlir_modules(
