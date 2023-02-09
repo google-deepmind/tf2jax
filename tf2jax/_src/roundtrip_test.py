@@ -738,10 +738,6 @@ class Jax2TfTest(test_util.TestCase):
       ))
   def test_custom_gradient_nested(self, with_grad, enable_xla):
     if jax.config.jax2tf_default_experimental_native_lowering:
-      # TODO(b/261971806) ValueError: Error compiling TensorFlow function.
-      # call_tf can used in a staged context (under jax.jit, lax.scan, etc.)
-      # only with compileable functions with static output shapes.
-      self.skipTest("To be removed.")
       if not enable_xla:
         self.skipTest("native_lowering does not support enable_xla=False.")
 
