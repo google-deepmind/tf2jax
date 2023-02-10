@@ -1926,13 +1926,7 @@ def _tensor_list_reserve(proto):
 @register_operation("TensorListSetItem")
 def _tensor_list_set_item(proto):
   """Parse an TensorListSetItem Op."""
-  _check_attrs(proto, {"element_dtype", "resize_if_index_out_of_bounds"})
-
-  if proto.attr["resize_if_index_out_of_bounds"].b:
-    raise ValueError(
-        "resize_if_index_out_of_bounds=True in TensorListSetItem is not yet"
-        " supported."
-    )
+  _check_attrs(proto, {"element_dtype"})
 
   dtype = tf.as_dtype(proto.attr["element_dtype"].type)
   dtype = anp.get_jax_dtype(dtype)
