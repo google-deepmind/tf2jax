@@ -904,6 +904,32 @@ class Jax2TfTest(test_util.TestCase):
     grad_jaxpr = jax.make_jaxpr(jax.grad(lambda x: jnp.sum(jax_fn(x))))(*inputs)
     self.assertRegex(str(grad_jaxpr), "optimization_barrier")
 
+  @chex.variants(with_jit=True, without_jit=True)
+  @parameterized.named_parameters(
+      chex.params_product(
+          (("without_gradient", False),),
+          (("enable_xla", True),),
+          (("without_custom_gradient", False), ("with_custom_gradient", True)),
+          named=True,
+      ))
+  def test_reduce_precision(self, with_grad, enable_xla, with_custom_grad):
+    if jax.__version_info__ <= (0, 4, 4):
+      self.skipTest("jax.lax.reduce_precision is only supported from 0.4.4 and "
+                    f"onward, found {jax.__version__}.")
+
+    np.random.seed(42)
+
+    def forward(x):
+      info = jnp.finfo(jnp.bfloat16)
+      return jax.lax.reduce_precision(x, info.nexp, info.nmant)
+
+    inputs = np.random.normal((3, 2)).astype(np.float32)
+    self._test_convert(
+        forward, [inputs],
+        with_grad=with_grad,
+        enable_xla=enable_xla,
+        with_custom_grad=with_custom_grad)
+
 
 if __name__ == "__main__":
   absltest.main()

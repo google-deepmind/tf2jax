@@ -2178,6 +2178,20 @@ def _xla_pad(proto):
   return _func
 
 
+@register_operation("XlaReducePrecision")
+def _xla_reduce_precision(proto):
+  """Parse a XlaReducePrecision op."""
+  _check_attrs(proto, {"T", "exponent_bits", "mantissa_bits"})
+
+  exponent = proto.attr["exponent_bits"].i
+  mantissa = proto.attr["mantissa_bits"].i
+
+  def _func(operand: jnp.ndarray) -> jnp.ndarray:
+    return jax.lax.reduce_precision(operand, exponent, mantissa)
+
+  return _func
+
+
 def _maybe_get_jaxpreqn(
     jaxpr: jax.core.ClosedJaxpr) -> Optional[jax.core.JaxprEqn]:
   def is_all_vars(vs):
