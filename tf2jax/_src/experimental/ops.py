@@ -16,6 +16,9 @@
 
 from typing import Tuple
 
+from absl import logging
+
+import jax
 from jax._src.lib.mlir import ir
 from jax.interpreters import mlir
 import jax.numpy as jnp
@@ -29,7 +32,16 @@ def _xla_call_module(proto):
   """Parse a XlaCallModule op."""
   ops._check_attrs(  # pylint: disable=protected-access
       proto,
-      {"Tin", "Sout", "Tout", "dim_args_spec", "module", "version"})
+      {
+          "Tin",
+          "Sout",
+          "Tout",
+          "dim_args_spec",
+          "module",
+          "version",
+          "platforms",
+      },
+  )
 
   version = proto.attr["version"].i
   if version != 2:
@@ -40,6 +52,13 @@ def _xla_call_module(proto):
   if dim_args_spec:
     raise ValueError("Dynamic shapes is not yet supported, found "
                      f"dim_args_spec={dim_args_spec}.")
+
+  jax_device = jax.default_backend().upper()
+  platforms = tuple(proto.attr["platforms"].list.s)
+  if platforms and jax_device not in platforms:
+    # TODO(shaobohou) Make this an error?
+    message = f"Unsupported backend: `{jax_device}` not in `{platforms}`"
+    logging.warning(message)
 
   with mlir.make_ir_context():
     module = ir.Module.parse(proto.attr["module"].s)
