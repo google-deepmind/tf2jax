@@ -894,7 +894,10 @@ def _convert(
       static_arg_num += 1
   input_names = tuple(input_names)
   assert len(input_names) == len(set(input_names))
-  output_names = tuple([v.name for v in tree.flatten(structured_outputs)])
+  flat_output_specs = tree.flatten(structured_outputs)
+  output_names = tuple(
+      v.name for v in flat_output_specs if isinstance(v, tf.TensorSpec)
+  )
 
   unsupported = ops.get_unsupported_operations(
       [node.op for node in graphdef.node])
@@ -1058,8 +1061,19 @@ def _convert(
 
         eval_cache.free_inputs(node)
 
-    flat_outputs = tuple([eval_cache.outputs[k.op_name] for k in output_args])
-    flat_outputs = [v for v in flat_outputs if v is not _EMPTY_RETURN_VALUE]
+    tensor_outputs = tuple([eval_cache.outputs[k.op_name] for k in output_args])
+    tensor_outputs = [v for v in tensor_outputs if v is not _EMPTY_RETURN_VALUE]
+
+    # Merge the tensor and non-tensor outputs.
+    output_idx = 0
+    flat_outputs = []
+    for spec in flat_output_specs:
+      if isinstance(spec, tf.TensorSpec):
+        flat_outputs.append(tensor_outputs[output_idx])
+        output_idx += 1
+      else:
+        flat_outputs.append(spec)
+    assert output_idx == len(tensor_outputs)
     collected_outputs = tree.unflatten_as(structured_outputs, flat_outputs)
 
     # Parameters after any assignment.

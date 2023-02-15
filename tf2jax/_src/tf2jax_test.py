@@ -517,6 +517,20 @@ class FeaturesTest(tf.test.TestCase, parameterized.TestCase):
 
     self.assertAllClose(tf_outputs, jax_outputs)
 
+  @chex.variants(with_jit=True, without_jit=True)
+  def test_none_in_outputs(self):
+    @tf.function
+    def tf_func(x):
+      return x + 1, None, x + 3.14
+
+    jax_func = tf2jax.convert_functional(tf_func, np.zeros((3, 2)))
+    inputs = np.ones((3, 2))
+    outputs = self.variant(jax_func)(inputs)
+
+    self.assertAllClose(inputs + 1, outputs[0])
+    self.assertIsNone(outputs[1])
+    self.assertAllClose(inputs + 3.14, outputs[2])
+
 
 if __name__ == "__main__":
   tf.test.main()
