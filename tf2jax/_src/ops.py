@@ -525,7 +525,7 @@ def _cumsum(proto):
   reverse = proto.attr["reverse"].b
 
   def _func(x: jnp.ndarray, axis: jnp.ndarray) -> jnp.ndarray:
-    axis: int = axis.tolist()
+    axis: int = axis.tolist()  # pytype: disable=annotation-type-mismatch  # jax-ndarray
     if reverse:
       x = anp.flip(x, axis=axis)
     if exclusive:
@@ -622,9 +622,9 @@ def _div_no_nan(proto):
       output = _div_no_nan_forward(x, y)
       dx = _div_no_nan_forward(g, y)
       dy = _div_no_nan_forward(-g * output, y)
-      return dx, dy
+      return dx, dy  # pytype: disable=bad-return-type  # jax-ndarray
 
-    return _div_no_nan_forward(x, y), _grad
+    return _div_no_nan_forward(x, y), _grad  # pytype: disable=bad-return-type  # jax-ndarray
 
   return _func
 
@@ -653,7 +653,7 @@ def _eig(proto):
     if compute_v:
       evecs = sort_fn(evecs, einds)
 
-    return evals, evecs
+    return evals, evecs  # pytype: disable=bad-return-type  # jax-ndarray
 
   return _func
 
@@ -686,9 +686,9 @@ def _eigh(proto):
       evecs = sort_fn(evecs, einds)
 
     if compute_v:
-      return evals, evecs
+      return evals, evecs  # pytype: disable=bad-return-type  # jax-ndarray
     else:
-      return evals, jnp.zeros(shape=(), dtype=evals.dtype)
+      return evals, jnp.zeros(shape=(), dtype=evals.dtype)  # pytype: disable=bad-return-type  # jax-ndarray
 
   return _func
 
@@ -857,12 +857,12 @@ def _gather(proto):
 
   # TODO(b/249826984) Add test for ResourceGather, dtype and validate_indices.
 
-  def _func(
+  def _func(  # pytype: disable=annotation-type-mismatch  # jax-ndarray
       params: jnp.ndarray,
       indices: jnp.ndarray,
       axis: jnp.ndarray = np.array(0, dtype=np.int32),
   ) -> jnp.ndarray:
-    return anp.gather(
+    return anp.gather(  # pytype: disable=wrong-arg-types  # jax-ndarray
         params, indices, axis=axis.tolist(), batch_dims=batch_dims)
 
   return _func
@@ -1038,9 +1038,9 @@ def _matrix_band_part(proto):
       raise ValueError(
           f"Expected input of at least rank 2, found {len(x.shape)}")
     mask_shape = x.shape[-2:]
-    lower = lower.tolist() + 1 if lower.tolist() >= 0 else max(mask_shape)
+    lower = lower.tolist() + 1 if lower.tolist() >= 0 else max(mask_shape)  # pytype: disable=unsupported-operands  # jax-ndarray
     mask_lower = jnp.tril(jnp.ones(mask_shape, jnp.int32), -lower)
-    upper = upper.tolist() + 1 if upper.tolist() >= 0 else max(mask_shape)
+    upper = upper.tolist() + 1 if upper.tolist() >= 0 else max(mask_shape)  # pytype: disable=unsupported-operands  # jax-ndarray
     mask_upper = jnp.triu(jnp.ones(mask_shape, jnp.int32), upper)
     return jnp.where((mask_lower + mask_upper) == 0, x, 0)
 
@@ -1150,7 +1150,7 @@ def _one_hot(proto):
       raise ValueError(f"OneHot does not support axis={axis} yet, "
                        f"indices.shape={indices.shape}.")
 
-    mask = jax.nn.one_hot(indices, num_classes=depth, dtype=jnp.int32)
+    mask = jax.nn.one_hot(indices, num_classes=depth, dtype=jnp.int32)  # pytype: disable=wrong-arg-types  # jax-ndarray
     return mask * on_value + (1 - mask) * off_value
 
   return _func
@@ -1241,7 +1241,7 @@ def _prevent_gradient(proto):
     def grad_fn(_):
       raise LookupError(f"Gradient explicitly prevented on node {proto.name}. "
                         f"Original reason: {message}")
-    return operand, grad_fn
+    return operand, grad_fn  # pytype: disable=bad-return-type  # jax-ndarray
 
   def _warn_func(operand: jnp.ndarray) -> jnp.ndarray:
     logging.warning("PreventGradient ignored on node %s. Original reason: %s",
@@ -1555,9 +1555,9 @@ def _splitv(proto):
     splits = size_splits.tolist()
     axis = axis.tolist()
     defined_size = sum([x for x in splits if x >= 0])
-    splits = [x if x >= 0 else value.shape[axis] - defined_size for x in splits]
+    splits = [x if x >= 0 else value.shape[axis] - defined_size for x in splits]  # pytype: disable=unsupported-operands  # jax-ndarray
     indices = np.cumsum(np.array(splits), axis=0)
-    assert indices[-1] == value.shape[axis]
+    assert indices[-1] == value.shape[axis]  # pytype: disable=unsupported-operands  # jax-ndarray
     return anp.split(value, indices[:-1], axis=axis)
 
   return _func
@@ -1614,7 +1614,7 @@ def _stateless_multinomial(proto):
     assert seed.shape == (2,), seed.shape
     seed = seed.astype(jnp.uint32)
     shape = (num_samples, logits.shape[0])
-    samples = jax.random.categorical(seed, logits, shape=shape)
+    samples = jax.random.categorical(seed, logits, shape=shape)  # pytype: disable=wrong-arg-types  # jax-ndarray
     return samples.astype(jax_dtype).transpose([1, 0])
 
   return _func
@@ -1678,7 +1678,7 @@ def _stateless_random_uniform_int_v2(proto):
       maxval: jnp.ndarray = jnp.iinfo(jax_dtype).max,
   ) -> jnp.ndarray:
     del counter, alg  # TODO(b/266553394) combine key and counter?
-    return jax.random.randint(
+    return jax.random.randint(  # pytype: disable=wrong-arg-types  # jax-ndarray
         key=key, shape=shape, minval=minval, maxval=maxval, dtype=jax_dtype,)
 
   return _func
@@ -1867,7 +1867,7 @@ def _svd(proto):
     else:
       u, s, v = None, res, None
 
-    return s, u, v
+    return s, u, v  # pytype: disable=bad-return-type  # jax-ndarray
 
   return _func
 
@@ -1917,7 +1917,7 @@ def _tensor_list_reserve(proto):
   dtype = anp.get_jax_dtype(dtype)
 
   def _func(shape: jnp.ndarray, num_elements: jnp.ndarray) -> jnp.ndarray:
-    return _create_tensor_list(
+    return _create_tensor_list(  # pytype: disable=wrong-arg-types  # jax-ndarray
         num_elements.tolist(), shape.tolist(), dtype=dtype)
 
   return _func
@@ -1963,7 +1963,7 @@ def _tensor_list_stack(proto):
   def _func(xs: jnp.ndarray, shape: jnp.ndarray) -> jnp.ndarray:
     if xs.size == 0:
       xs = _create_tensor_list(xs.shape[0], shape.tolist(), dtype=dtype)
-    return xs
+    return xs  # pytype: disable=bad-return-type  # jax-ndarray
 
   return _func
 
@@ -2015,7 +2015,7 @@ def _unpack(proto):
     if x.shape[axis] != num:
       raise ValueError("Unpack expects dimension of {num} for axis={axis}, "
                        "found {x.shape[axis]}, shape={x.shape}")
-    return [anp.squeeze(v, axis=axis) for v in anp.split(x, num, axis=axis)]
+    return [anp.squeeze(v, axis=axis) for v in anp.split(x, num, axis=axis)]  # pytype: disable=bad-return-type  # jax-ndarray
 
   return _func
 
@@ -2062,7 +2062,7 @@ def _xla_conv(proto):
       rhs_dilation: jnp.ndarray,
       feature_group_count: jnp.ndarray,
   ) -> jnp.ndarray:
-    return jax.lax.conv_general_dilated(
+    return jax.lax.conv_general_dilated(  # pytype: disable=wrong-arg-types  # jax-ndarray
         lhs,
         rhs,
         window_strides=strides.tolist(),
@@ -2271,7 +2271,7 @@ class _XlaVariadicSort(_HigherOrderFunction):
       dtypes = [x.dtype for x in operands]
       num_keys = self._compute_num_keys(dtypes, comparator)
 
-    return jax.lax.sort(
+    return jax.lax.sort(  # pytype: disable=wrong-arg-types  # jax-ndarray
         operands,
         dimension=dimension,
         is_stable=self.is_stable,
@@ -2434,7 +2434,7 @@ def _xla_rng_bit_generator(proto):
         shape=shape,
         dtype=jax_dtype,
         # See tensorflow/compiler/tf2xla/ops/xla_ops.cc#L812
-        algorithm=xla_utils.get_random_algorithm_from_tf(algorithm.tolist()),
+        algorithm=xla_utils.get_random_algorithm_from_tf(algorithm.tolist()),  # pytype: disable=wrong-arg-types  # jax-ndarray
     )
 
   return _func
