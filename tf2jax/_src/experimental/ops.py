@@ -44,9 +44,9 @@ def _xla_call_module(proto):
   )
 
   version = proto.attr["version"].i
-  if version != 2:
+  if version < 2:
     raise ValueError(
-        f"Only version 2 (StableHLO) is supported, found {version}.")
+        f"Only version 2 (StableHLO) or above is supported, found {version}.")
 
   dim_args_spec = tuple(proto.attr["dim_args_spec"].list.s)
   if dim_args_spec:
