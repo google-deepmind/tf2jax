@@ -63,6 +63,13 @@ else
 fi
 
 pytest -n "${N_JOBS}" --pyargs tf2jax
+
+# Native lowering is in active development so we test against nightly and github head.
+pip uninstall --yes tensorflow
+pip install tf-nightly
+pip install git+https://github.com/google/jax.git
+pip install -U --pre jaxlib -f https://storage.googleapis.com/jax-releases/jaxlib_nightly_releases.html
+JAX2TF_DEFAULT_EXPERIMENTAL_NATIVE_LOWERING=1 pytest -n "${N_JOBS}" --pyargs tf2jax._src.roundtrip_test
 cd ..
 
 set +u
