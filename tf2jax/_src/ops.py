@@ -2192,6 +2192,20 @@ def _xla_reduce_precision(proto):
   return _func
 
 
+@register_operation("XlaSharding")
+def _xla_sharding(proto):
+  """Parse a XlaSharding op."""
+  _check_attrs(proto, {"T", "sharding", "unspecified_dims"})
+
+  sharding = proto.attr["sharding"].s
+  if sharding:
+    raise ValueError(
+        f"Sharding is not yet supported (except identity), found {proto}."
+    )
+
+  return lambda x: x
+
+
 def _maybe_get_jaxpreqn(
     jaxpr: jax.core.ClosedJaxpr) -> Optional[jax.core.JaxprEqn]:
   def is_all_vars(vs):
