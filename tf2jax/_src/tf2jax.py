@@ -36,6 +36,7 @@ from tensorflow.python.framework import op_def_registry  # pylint: disable=no-na
 from tensorflow.python.framework import ops as tf_ops  # pylint: disable=no-name-in-module
 
 
+ArrayLike = ops.ArrayLike
 SpecTree = Union[tf.TensorSpec, Iterable["SpecTree"], Mapping[str, "SpecTree"]]
 
 
@@ -157,7 +158,7 @@ class _LibraryFunction(NamedTuple):
   fn: Callable[..., Any]
   require_rng: bool
   # Optional fields (mainly) used by gradient functions.
-  params: Optional[Mapping[str, jnp.ndarray]] = None
+  params: Optional[Mapping[str, ArrayLike]] = None
   input_specs: Optional[Tuple[tf.TensorSpec, ...]] = None
   output_specs: Optional[Tuple[tf.TensorSpec, ...]] = None
   # If fn is a gradient function, this is the output specs for the original fn.
@@ -1255,7 +1256,7 @@ def _convert_gradient_function(
       # Note that dict(**a, **b) will raise TypeError on dupliates, unlike {}.
       library=dict(**library, **grad_lib),
   )
-  grad_fn = _LibraryFunction(jax_grad_fn, False, jax_grad_params,  # pytype: disable=wrong-arg-types  # jax-ndarray
+  grad_fn = _LibraryFunction(jax_grad_fn, False, jax_grad_params,
                              grad_input_specs, grad_output_specs,
                              grad_output_specs[:num_fn_outputs])
   return dict(**grad_lib, **{grad_fn_name: grad_fn})
