@@ -16,7 +16,7 @@
 
 import dataclasses
 import functools
-from typing import Any, Callable, List, Optional, Mapping, Sequence, Set, Tuple, Union
+from typing import Any, Callable, List, Optional, Mapping, Protocol, Sequence, Set, Tuple, Union
 
 from absl import logging
 
@@ -2343,6 +2343,15 @@ def _get_min_identity(dtype):
     return np.array(True, np.bool_)
 
 
+class _LibraryFunction(Protocol):
+
+  @property
+  def callable(self) -> Callable[..., Any]: ...
+
+  @property
+  def callable_with_params(self) -> Callable[..., Any]: ...
+
+
 class _XlaReduceWindow(_HigherOrderFunction):
   """Represents a XlaReduceWindow Op."""
 
@@ -2356,7 +2365,7 @@ class _XlaReduceWindow(_HigherOrderFunction):
       window_dilation: jnp.ndarray,
       padding: jnp.ndarray,
       *,
-      computation: Callable[..., Any],
+      computation: _LibraryFunction,
   ):
     window_dimensions = window_dimensions.tolist()
     window_strides = window_strides.tolist()
@@ -2371,12 +2380,14 @@ class _XlaReduceWindow(_HigherOrderFunction):
         jax.lax.add_p: jax.lax.add,
         jax.lax.mul_p: jax.lax.mul,
     }
-    computation_jaxpr = jax.make_jaxpr(computation)(init_value, init_value)
+    computation_jaxpr = jax.make_jaxpr(computation.callable)(
+        init_value, init_value
+    )
     computation_eqn = _maybe_get_jaxpreqn(computation_jaxpr)
     if computation_eqn is not None and computation_eqn.primitive in primitives:
       computation_fn = primitives[computation_eqn.primitive]
     else:
-      computation_fn = lambda *args: computation(*args)[0]
+      computation_fn = lambda *args: computation.callable(*args)[0]
       logging.info("Calling reduce_window with the following computation:\n%s",
                    computation_jaxpr)
 
@@ -2482,10 +2493,10 @@ class _XlaScatter(_HigherOrderFunction):
       indices: jnp.ndarray,
       updates: jnp.ndarray,
       *,
-      update_computation: Callable[..., Any],
+      update_computation: _LibraryFunction,
   ) -> jnp.ndarray:
     dummy_zero = jnp.array(0).astype(operand.dtype)
-    jaxpr = jax.make_jaxpr(update_computation)(dummy_zero, dummy_zero)
+    jaxpr = jax.make_jaxpr(update_computation.callable)(dummy_zero, dummy_zero)
     if not jaxpr.eqns:
       scatter_fn = jax.lax.scatter
     elif len(jaxpr.eqns) == 1 and jaxpr.eqns[0].primitive == jax.lax.add_p:
@@ -2539,14 +2550,16 @@ class _XlaSelectAndScatter(_HigherOrderFunction):
       source: jnp.ndarray,
       inner_init_value: jnp.ndarray,
       *,
-      scatter: Callable[..., Any],
-      select: Callable[..., Any],
+      scatter: _LibraryFunction,
+      select: _LibraryFunction,
   ) -> jnp.ndarray:
     # Because jax.lax._select_and_scatter is not part of the JAX public api, we
     # are using a crude pattern matching to determine the reducer used in the
     # original reduce_window call.
 
-    scatter_jaxpr = jax.make_jaxpr(scatter)(inner_init_value, inner_init_value)
+    scatter_jaxpr = jax.make_jaxpr(scatter.callable)(
+        inner_init_value, inner_init_value
+    )
     scatter_eqn = _maybe_get_jaxpreqn(scatter_jaxpr)
     if scatter_eqn is not None and scatter_eqn.primitive is not jax.lax.add_p:
       raise ValueError(
@@ -2557,7 +2570,9 @@ class _XlaSelectAndScatter(_HigherOrderFunction):
         jax.lax.ge_p: (-jnp.inf, jax.lax.max),
         jax.lax.le_p: (jnp.inf, jax.lax.min),
     }
-    select_jaxpr = jax.make_jaxpr(select)(inner_init_value, inner_init_value)
+    select_jaxpr = jax.make_jaxpr(select.callable)(
+        inner_init_value, inner_init_value
+    )
     select_eqn = _maybe_get_jaxpreqn(select_jaxpr)
     if select_eqn is not None and select_eqn.primitive in select_primitives:
       init_value, computation = select_primitives[select_eqn.primitive]

@@ -168,10 +168,18 @@ class _LibraryFunction(NamedTuple):
 
   def __call__(self, *args, **kwargs):
     if self.params:
-      return self.fn(self.params, *args, **kwargs)
+      return self.callable_with_params(*args, **kwargs)
     else:
       # Ignore parameters in inputs and outputs.
-      return self.fn({}, *args, **kwargs)[0]
+      return self.callable(*args, **kwargs)
+
+  @property
+  def callable(self) -> Callable[..., Any]:
+    return lambda *args, **kwargs: self.fn({}, *args, **kwargs)[0]
+
+  @property
+  def callable_with_params(self) -> Callable[..., Any]:
+    return lambda *args, **kwargs: self.fn(self.params, *args, **kwargs)
 
 
 def _unbox_named_args(
