@@ -2041,6 +2041,16 @@ class OpsTest(test_util.TestCase):
       return tf.raw_ops.IRFFT(input=x, fft_length=[len(x)])
     self._test_convert(irfft, inputs)
 
+  @chex.variants(with_jit=True, without_jit=True)
+  def test_var_handle(self):
+    def var_handle():
+      return tf.raw_ops.VarHandleOp(dtype=tf.float32, shape=(3, 5), name="blah")
+
+    with self.assertRaisesRegex(
+        ValueError, "VarHandleOp `blah` cannot be evaluated"
+    ):
+      self._test_convert(var_handle, [])
+
 
 if __name__ == "__main__":
   tf.test.main()
