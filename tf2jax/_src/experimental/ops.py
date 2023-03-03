@@ -19,9 +19,9 @@ from typing import Tuple
 from absl import logging
 
 import jax
-from jax._src.lib.mlir import ir
 from jax.interpreters import mlir
 import jax.numpy as jnp
+from jaxlib.mlir import ir
 
 from tf2jax._src import ops
 from tf2jax._src.experimental import mhlo

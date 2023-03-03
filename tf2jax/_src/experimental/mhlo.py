@@ -21,13 +21,15 @@ from typing import Any, Dict, Tuple
 import jax
 from jax import core
 from jax._src.lib import xla_client as xc
-import jax._src.util as util  # pylint: disable=consider-using-from-import
 from jax.interpreters import mlir
 
 from jaxlib.mlir import ir
 from jaxlib.mlir.dialects import mhlo
 
 import numpy as np
+
+from tf2jax._src.experimental import util
+
 
 _program_cache: Dict[str, Tuple[str, xc._xla.XlaComputation]] = {}
 _program_lock = threading.Lock()
