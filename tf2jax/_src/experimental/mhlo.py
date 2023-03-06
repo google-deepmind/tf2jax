@@ -20,8 +20,8 @@ from typing import Any, Dict, Tuple
 
 import jax
 from jax import core
-from jax._src.lib import xla_client as xc
 from jax.interpreters import mlir
+from jax.lib import xla_client as xc
 
 from jaxlib.mlir import ir
 from jaxlib.mlir.dialects import mhlo
@@ -31,14 +31,14 @@ import numpy as np
 from tf2jax._src.experimental import util
 
 
-_program_cache: Dict[str, Tuple[str, xc._xla.XlaComputation]] = {}
+_program_cache: Dict[str, Tuple[str, xc.XlaComputation]] = {}
 _program_lock = threading.Lock()
 
 mhlo_apply_p = core.Primitive("mhlo_apply")
 mhlo_apply_p.multiple_results = True
 
 
-def _get_program(mhlo_text: str) -> Tuple[str, xc._xla.XlaComputation]:
+def _get_program(mhlo_text: str) -> Tuple[str, xc.XlaComputation]:
   """Thread-safe cache of MHLO string to XlaComputation."""
   try:
     return _program_cache[mhlo_text]
