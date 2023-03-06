@@ -16,7 +16,7 @@
 
 import dataclasses
 import functools
-from typing import Any, Callable, List, Optional, Mapping, Sequence, Set, Tuple, Union
+from typing import Any, Callable, List, Optional, Mapping, Protocol, Sequence, Set, Tuple, Union
 
 from absl import logging
 
@@ -207,6 +207,11 @@ def register_operation(op_name):
   return functools.partial(_register, op_name=op_name)
 
 
+class _LibraryFunction(Protocol):
+  # Inputs corresponding to VarHandleOp
+  variable_input_specs: Optional[Tuple[tf.TensorSpec, ...]] = None
+
+
 @dataclasses.dataclass
 class _HigherOrderFunction:
   """Base class for higher order ops."""
@@ -216,6 +221,13 @@ class _HigherOrderFunction:
       self, library_functions: Mapping[str, Callable[..., Any]]
   ) -> Mapping[str, Callable[..., Any]]:
     return {k: library_functions[v] for k, v in self.inner_fn_names.items()}
+
+  def get_additional_inputs(
+      self, **inner_functions: _LibraryFunction
+  ) -> Tuple[str, ...]:
+    """Get additional input names required by the op."""
+    del inner_functions
+    return ()
 
 
 @register_operation("All")
@@ -1206,6 +1218,17 @@ class _PartitionedCall(_HigherOrderFunction):
   def __call__(self, *args, inner_fn, rng=None):
     return inner_fn(*args, rng=rng)
 
+  def get_additional_inputs(
+      self, **inner_functions: _LibraryFunction
+  ) -> Tuple[str, ...]:
+    """Get additional input names required by the op."""
+    return self._get_additional_inputs(**inner_functions)
+
+  def _get_additional_inputs(
+      self, inner_fn: _LibraryFunction
+  ) -> Tuple[str, ...]:
+    return tuple(spec.name for spec in inner_fn.variable_input_specs)
+
 
 @register_operation("StatefulPartitionedCall")
 @register_operation("PartitionedCall")
@@ -2035,6 +2058,7 @@ def _unpack(proto):
   return _func
 
 
+# TODO(b271811043) Add unit test.
 @register_operation("VarHandleOp")
 def _var_handle(proto):
   _check_attrs(

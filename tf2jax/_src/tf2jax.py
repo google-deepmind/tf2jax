@@ -165,6 +165,8 @@ class _LibraryFunction(NamedTuple):
   orig_fn_output_specs: Optional[Tuple[tf.TensorSpec, ...]] = None
   # Whether an output is unmodified input to the function.
   output_is_input: Optional[Tuple[bool]] = None
+  # Inputs corresponding to VarHandleOp
+  variable_input_specs: Optional[Tuple[tf.TensorSpec, ...]] = None
 
   def __call__(self, *args, **kwargs):
     if self.params:
@@ -202,11 +204,14 @@ class _OpNode:
     self.op = proto.op
     self.name = proto.name
 
+    inputs = [_TensorEdge.from_string(inp, node_map) for inp in proto.input]
+
     self.inner_fns = dict()
     if isinstance(self.jax_func, ops._HigherOrderFunction):
       self.inner_fns = self.jax_func.get_inner_functions(library)
+      for input_name in self.jax_func.get_additional_inputs(**self.inner_fns):
+        inputs.append(_TensorEdge.from_string(input_name, node_map))
 
-    inputs = [_TensorEdge.from_string(inp, node_map) for inp in proto.input]
     self.control_inputs = tuple([inp for inp in inputs if inp.is_control])
     self.inputs = tuple([inp for inp in inputs if not inp.is_control])
 
@@ -1119,9 +1124,17 @@ def _convert_library_function(
   graphdef = _GraphDef(tuple(input_nodes + list(proto.node_def) + output_nodes))
   output_is_input = tuple(output_is_input)
 
+  # VarHandleOp correspond to variables in checkpoints.
+  var_handle_ops = [n for n in proto.node_def if n.op == "VarHandleOp"]
+
   params = [
       inspect.Parameter(arg.name, inspect.Parameter.POSITIONAL_ONLY)
       for arg in proto.signature.input_arg
+  ] + [
+      inspect.Parameter(
+          arg.name.replace("/", "___"), inspect.Parameter.POSITIONAL_ONLY
+      )
+      for arg in var_handle_ops
   ]
   signature = inspect.Signature(params)
 
@@ -1133,6 +1146,16 @@ def _convert_library_function(
       tf.TensorSpec(None, dtype=tf.as_dtype(arg.type), name=arg.name)
       for arg in proto.signature.output_arg
   ])
+
+  def node_to_spec(v):
+    return tf.TensorSpec(
+        shape=[dim.size for dim in v.attr["shape"].shape.dim],
+        dtype=tf.as_dtype(v.attr["dtype"].type),
+        name=v.name,
+    )
+
+  var_inputs = tuple(node_to_spec(v) for v in var_handle_ops)
+  structured_inputs = structured_inputs + var_inputs
 
   jax_func, jax_params = _convert(
       graphdef,
@@ -1151,8 +1174,15 @@ def _convert_library_function(
       if attr.func.name:
         require_rng = require_rng or library[attr.func.name].require_rng
 
-  return _LibraryFunction(jax_func, require_rng, None, structured_inputs,
-                          structured_outputs, output_is_input=output_is_input)
+  return _LibraryFunction(
+      fn=jax_func,
+      require_rng=require_rng,
+      params=None,
+      input_specs=structured_inputs,
+      output_specs=structured_outputs,
+      output_is_input=output_is_input,
+      variable_input_specs=var_inputs,
+  )
 
 
 def _filter_nodes(
