@@ -1036,6 +1036,14 @@ def _convert(
             "context manager "
             "tf2jax.override_config('strict_dtype_check', False)")
 
+    missing_params = [
+        var_by_node.get(v, v)
+        for v in captured_input_names
+        if var_by_node.get(v, v) not in all_params
+    ]
+    if missing_params:
+      raise ValueError(f"Some parameters are missing, {missing_params}.")
+
     full_inputs = inputs + tuple(
         [all_params[var_by_node.get(v, v)] for v in captured_input_names])
     full_inputs = list(zip(input_names + captured_input_names, full_inputs))

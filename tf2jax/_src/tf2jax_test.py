@@ -531,6 +531,25 @@ class FeaturesTest(tf.test.TestCase, parameterized.TestCase):
     self.assertIsNone(outputs[1])
     self.assertAllClose(inputs + 3.14, outputs[2])
 
+  @chex.variants(with_jit=True, without_jit=True)
+  def test_missing_params(self):
+    variables = dict(
+        a=tf.Variable(3.14, trainable=True, name="aaa"),
+        b=tf.Variable(42.0, trainable=False, name="bbb"),
+    )
+
+    @tf.function
+    def tf_func(x):
+      return x + variables["a"] + variables["b"]
+
+    np_inputs = np.array(range(6), dtype=np.float32).reshape(3, 2)
+    jax_func, jax_params = tf2jax.convert(tf_func, np.zeros_like(np_inputs))
+
+    with self.assertRaisesRegex(
+        ValueError, r"Some parameters are missing, \[\'bbb\'\]."
+    ):
+      self.variant(jax_func)({"aaa": jax_params["aaa"]}, np_inputs)
+
 
 if __name__ == "__main__":
   tf.test.main()
