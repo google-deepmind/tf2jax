@@ -39,6 +39,8 @@ from tensorflow.python.framework import ops as tf_ops  # pylint: disable=no-name
 ArrayLike = ops.ArrayLike
 SpecTree = Union[tf.TensorSpec, Iterable["SpecTree"], Mapping[str, "SpecTree"]]
 
+safe_zip = jax.util.safe_zip
+
 
 class AnnotatedFunction:
   """Callable function with additional metadata.
@@ -184,13 +186,13 @@ def _unbox_named_args(
   if len(named_args) != len(inputs):
     raise ValueError(
         f"Expected {len(inputs)} arguments, received {len(named_args)}")
-  for (arg_name, _), inp in zip(named_args, inputs):
+  for (arg_name, _), inp in safe_zip(named_args, inputs):
     if arg_name != inp.op_name:
       raise ValueError(f"Expected inputs {inp.op_name}, found {arg_name}")
 
   unboxed_args = [
       arg[inp.idx] if isinstance(arg, (list, tuple)) else arg
-      for arg, inp in zip([x for _, x in named_args], inputs)
+      for arg, inp in safe_zip([x for _, x in named_args], inputs)
   ]
   return tuple(unboxed_args)
 
@@ -453,8 +455,11 @@ def convert(
 
   num_flat_args = len(concrete_func.inputs) - len(concrete_func.captured_inputs)
   captures = list(
-      zip([inp.op.name for inp in concrete_func.inputs[num_flat_args:]],
-          [inp for inp in concrete_func.captured_inputs]))
+      safe_zip(
+          [inp.op.name for inp in concrete_func.inputs[num_flat_args:]],
+          [inp for inp in concrete_func.captured_inputs],
+      )
+  )
   func_variables = {v.handle.ref(): v for v in concrete_func.variables}
   variable_map = {
       k: func_variables[v.ref()] for k, v in captures if v.dtype == tf.resource
@@ -611,7 +616,7 @@ class _Subgraph(NamedTuple):
       eval_cache = _EvaluationCache(
           self.subgraph, named_args, self.output_node.inputs + grad_inputs)
       assert len(args) == len(self.unique_inputs)
-      for inp, val in zip(self.unique_inputs, args):
+      for inp, val in safe_zip(self.unique_inputs, args):
         if isinstance(eval_cache.outputs[inp.op_name], list):
           eval_cache.outputs[inp.op_name][inp.idx] = val
         elif isinstance(eval_cache.outputs[inp.op_name], tuple):
@@ -1000,9 +1005,9 @@ def _convert(
 
     inputs = tree.map_structure(
         lambda x: x if isinstance(x, jnp.ndarray) else np.array(x), inputs)
-    all_params = {**params, **constants}
+    all_params = dict(**params, **constants)
 
-    for inp, (path, spec) in zip(inputs, input_path_to_specs):
+    for inp, (path, spec) in safe_zip(inputs, input_path_to_specs):
       if not isinstance(spec, tf.TensorSpec):
         # A `None` spec denotes a Tensor argument that was unused in deepfunc.
         is_tracer = isinstance(inp, jax.core.Tracer)
@@ -1046,7 +1051,9 @@ def _convert(
 
     full_inputs = inputs + tuple(
         [all_params[var_by_node.get(v, v)] for v in captured_input_names])
-    full_inputs = list(zip(input_names + captured_input_names, full_inputs))
+    full_inputs = list(
+        safe_zip(input_names + captured_input_names, full_inputs)
+    )
 
     if num_rng_required:
       rng_keys = list(jax.random.split(rng, num_rng_required))
@@ -1256,7 +1263,7 @@ def _convert_gradient_function(
   constant_map = {}
   external_capture_specs = []
   internal_capture_names = []
-  for inp, cap in zip(grad_inputs[num_flat_args:], grad_captured_inputs):
+  for inp, cap in safe_zip(grad_inputs[num_flat_args:], grad_captured_inputs):
     if cap.dtype == tf.resource:
       variable_map[inp.op.name] = func_variables[cap.ref()]
       internal_capture_names.append(inp.op.name)

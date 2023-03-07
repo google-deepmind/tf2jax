@@ -71,8 +71,9 @@ class OpsTest(test_util.TestCase):
     tf_results = tf_func(*inputs)
 
     # Check outputs
-    for tf_res, jax_res in zip(
-        tree.flatten(tf_results), tree.flatten(jax_results)):
+    for tf_res, jax_res in jax.util.safe_zip(
+        tree.flatten(tf_results), tree.flatten(jax_results)
+    ):
       self.assertEqual(tf_res.shape, jax_res.shape)
       if not check_shape_only:
         self.assertAllClose(np.asarray(tf_res), jax_res, atol=atol)

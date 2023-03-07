@@ -33,10 +33,11 @@ from tf2jax._src import xla_utils
 
 ArrayLike = Union[np.ndarray, jnp.ndarray]
 
-
 # NoOp inserted to trigger side effects in function with no return values.
 _EMPTY_RETURN_OP_NAME = "__NO_RETURN__"
 _EMPTY_RETURN_VALUE = object()
+
+safe_zip = jax.util.safe_zip
 
 
 def _check_attrs(proto, expected: Set[str]):
@@ -753,8 +754,9 @@ def _ensure_shape(proto):
     return x == -1 or s == -1 or x == s
 
   def _func(x: jnp.ndarray) -> jnp.ndarray:
-    if (len(x.shape) != len(shape) or
-        not all(is_compatible(x, s) for x, s in zip(x.shape, shape))):
+    if len(x.shape) != len(shape) or not all(
+        is_compatible(x, s) for x, s in safe_zip(x.shape, shape)
+    ):
       raise ValueError(f"Expected shape={shape}, found {x.shape}.")
     return x
 
@@ -1531,7 +1533,7 @@ def _slice(proto):
       sizes: jnp.ndarray,
   ) -> jnp.ndarray:
     """`begins` and `sizes` must be concrete arrays."""
-    slices = [slice(b, b + s) for b, s in zip(begins, sizes)]
+    slices = [slice(b, b + s) for b, s in safe_zip(begins, sizes)]
     return x[tuple(slices)]
 
   return _func
@@ -1728,7 +1730,7 @@ def _split_args(
   assert len(args) == len(preds), (len(args), len(preds))
   true_args = []
   false_args = []
-  for idx, (arg, pred) in enumerate(zip(args, preds)):
+  for idx, (arg, pred) in enumerate(safe_zip(args, preds)):
     if pred:
       true_args.append((idx, arg))
     else:
@@ -1754,11 +1756,11 @@ class _StatelessWhile(_HigherOrderFunction):
     # Pull captured arguments out of inputs to cond and body.
     const_idxs_args, trace_idxs_args = _split_args(
         all_args, body_fun.output_is_input)
-    trace_idxs, trace_args = zip(*trace_idxs_args)
+    trace_idxs, trace_args = safe_zip(*trace_idxs_args)
 
     def real_cond(args):
       *cond_args, rng = args
-      cond_idxs_args = tuple(zip(trace_idxs, cond_args))
+      cond_idxs_args = tuple(safe_zip(trace_idxs, cond_args))
       cond_args = _merge_args(const_idxs_args, cond_idxs_args)
       _, cond_key, _ = [None] * 3 if rng is None else jax.random.split(rng, 3)
       outputs = cond_fun(*cond_args, rng=cond_key)
@@ -1769,7 +1771,7 @@ class _StatelessWhile(_HigherOrderFunction):
 
     def real_body(args):
       *body_args, rng = args
-      body_idxs_args = tuple(zip(trace_idxs, body_args))
+      body_idxs_args = tuple(safe_zip(trace_idxs, body_args))
       body_args = _merge_args(const_idxs_args, body_idxs_args)
       key, _, body_key = [None] * 3 if rng is None else jax.random.split(rng, 3)
       outputs = body_fun(*body_args, rng=body_key)
@@ -1786,11 +1788,13 @@ class _StatelessWhile(_HigherOrderFunction):
     output_specs = jax.eval_shape(real_body, trace_args + (rng,))
     trace_args = tuple(
         maybe_initialise(arg, spec)
-        for arg, spec in zip(trace_args, output_specs))
+        for arg, spec in safe_zip(trace_args, output_specs[:-1]))
 
     outputs = jax.lax.while_loop(real_cond, real_body, trace_args + (rng,))
     *outputs, _ = outputs  # Drop rng.
-    outputs = _merge_args(const_idxs_args, tuple(zip(trace_idxs, outputs)))
+    outputs = _merge_args(
+        const_idxs_args, tuple(safe_zip(trace_idxs, outputs))
+    )
     assert len(outputs) == len(all_args), (len(outputs), len(all_args))
     return outputs
 

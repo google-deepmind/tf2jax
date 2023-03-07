@@ -68,12 +68,13 @@ class ModelsTest(tf.test.TestCase, parameterized.TestCase):
         tf.function(tf_func), np.zeros_like(inputs))
     jax_func = self.variant(jax_func)
 
-    jax_results, jax_params = jax_func(jax_params, inputs)
+    (jax_results, _), jax_params = jax_func(jax_params, inputs)
     tf_results, tf_params = tf_func(inputs)
 
     # Check outputs
-    for tf_res, jax_res in zip(
-        tree.flatten(tf_results), tree.flatten(jax_results)):
+    for tf_res, jax_res in jax.util.safe_zip(
+        tree.flatten(tf_results), tree.flatten(jax_results)
+    ):
       self.assertAllClose(tf_res.numpy(), jax_res, atol=1e-4)
 
     # Check params (batchnorm stats changed).
