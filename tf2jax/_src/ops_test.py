@@ -986,6 +986,31 @@ class OpsTest(test_util.TestCase):
     self._test_convert(tf_func, inputs)
 
   @chex.variants(with_jit=True, without_jit=True)
+  @parameterized.parameters(np.float32, np.int32, np.bool_)
+  def test_matrix_set_diag(self, dtype):
+    np.random.seed(42)
+
+    diagonal = np.array([[1, 2, 3], [4, 5, 6]]).astype(dtype)
+
+    if dtype == np.float32:
+      inputs = np.random.normal(size=[2, 3, 4]).astype(dtype)
+    elif dtype == np.int32:
+      inputs = np.random.randint(low=0, high=10, size=[2, 3, 4], dtype=dtype)
+    elif dtype == np.bool_:
+      inputs = np.random.normal(size=[2, 3, 4]) > 0.0
+      diagonal = diagonal > 3
+    else:
+      raise ValueError(f"Unsupported dtype={dtype}")
+
+    def raw_func(x, y):
+      return tf.raw_ops.MatrixSetDiagV3(input=x, diagonal=y, k=1)
+    self._test_convert(raw_func, [inputs, diagonal])
+
+    def tf_func(x, y):
+      return tf.linalg.set_diag(x, y, k=1)
+    self._test_convert(tf_func, [inputs, diagonal])
+
+  @chex.variants(with_jit=True, without_jit=True)
   def test_max(self):
     inputs = np.array(np.reshape(range(24), (4, 3, 2)), dtype=np.int32)
 

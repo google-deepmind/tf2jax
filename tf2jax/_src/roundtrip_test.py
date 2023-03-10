@@ -927,6 +927,63 @@ class Jax2TfTest(test_util.TestCase):
         enable_xla=enable_xla,
         with_custom_grad=with_custom_grad)
 
+  @chex.variants(with_jit=True, without_jit=True)
+  @parameterized.named_parameters(
+      chex.params_product(
+          (("without_gradient", True),),
+          (("enable_xla", True),),
+          (("with_custom_gradient", True),),
+          (
+              ("lower", True),
+              ("upper", False),
+          ),
+          (
+              ("unit_diagonal", True),
+              ("not_unit_diagonal", False),
+          ),
+          (
+              ("unbatched", ((5, 5), (5, 5))),
+              ("batched", ((3, 5, 5), (3, 5, 4))),
+              ("more_batched", ((2, 3, 5, 5), (2, 3, 5, 6))),
+          ),
+          named=True,
+      ))
+  def test_triangular_solve(
+      self,
+      with_grad,
+      enable_xla,
+      with_custom_grad,
+      lower,
+      unit_diagonal,
+      shapes,
+  ):
+    if jax.config.jax2tf_default_experimental_native_lowering:
+      self.skipTest(
+          "native_lowering: Cannot serialize code with custom calls whose "
+          "targets have no compatibility guarantees.")
+
+    np.random.seed(42)
+
+    lhs_shape, rhs_shape = shapes
+    inputs = (
+        np.random.normal(size=lhs_shape).astype(np.float32),
+        np.random.normal(size=rhs_shape).astype(np.float32),
+    )
+
+    def forward(a, b):
+      return jax.lax.linalg.triangular_solve(
+          a, b, left_side=True, lower=lower, unit_diagonal=unit_diagonal
+      )
+
+    tols = dict(atol=1e-5) if jax.default_backend().lower() == "tpu" else {}
+
+    self._test_convert(
+        forward, inputs,
+        with_grad=with_grad,
+        enable_xla=enable_xla,
+        with_custom_grad=with_custom_grad,
+        grad_tols=tols)
+
 
 if __name__ == "__main__":
   absltest.main()

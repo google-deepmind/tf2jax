@@ -1044,6 +1044,43 @@ def _matrix_diag(proto):
   return _func
 
 
+@register_operation("MatrixSetDiagV3")
+def _matrix_set_diag(proto):
+  """Parse a MatrixSetDiagV3 op."""
+  _check_attrs(proto, {"T", "align"})
+
+  align = str(proto.attr["align"].s, "utf-8")
+  if align != "RIGHT_LEFT":
+    raise ValueError(f"MatrixSetDiagV3 does not support `align={align}` yet.")
+
+  def _func(
+      inputs: jnp.ndarray,
+      diagonals: jnp.ndarray,
+      k: jnp.ndarray,
+  ) -> jnp.ndarray:
+    k = k.item()
+
+    def diag_fn(inps: jnp.ndarray, diag: jnp.ndarray) -> jnp.ndarray:
+      assert len(inps.shape) == 2, inps.shape
+      assert len(diag.shape) == 1, diag.shape
+      if ((diag.shape[0] + k > inps.shape[1]) or
+          (diag.shape[0] - k > inps.shape[0])):
+        raise ValueError(
+            f"Incompatible inputs shape ({inputs.shape}) and diagonals shape "
+            f"({diagonals.shape}).")
+
+      return jnp.diagflat(diag, k=k)[:inps.shape[0], :inps.shape[1]]
+
+    for _ in range(len(diagonals.shape) - 1):
+      diag_fn = jax.vmap(diag_fn)
+
+    outputs = diag_fn(inputs, diagonals)
+    mask = diag_fn(inputs, jnp.ones_like(diagonals, dtype=jnp.bool_))
+    return jnp.where(mask, outputs, inputs)
+
+  return _func
+
+
 @register_operation("MatrixBandPart")
 def _matrix_band_part(proto):
   """Parse a MatrixBandPart op."""
