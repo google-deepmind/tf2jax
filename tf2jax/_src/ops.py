@@ -1535,9 +1535,7 @@ def _scatter_nd(proto):
       updates: jnp.ndarray,
       shape: jnp.ndarray,
   ) -> jnp.ndarray:
-    zeros = jnp.zeros(shape, updates.dtype)
-    key = tuple(jnp.moveaxis(indices, -1, 0))
-    return zeros.at[key].set(updates)
+    return anp.scatter_nd(indices, updates, shape)
 
   return _func
 

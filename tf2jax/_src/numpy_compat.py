@@ -167,6 +167,17 @@ def gather(params, indices, axis: int, batch_dims: int):
     return take_fn(params, indices)
 
 
+def scatter_nd(indices, updates, shape):
+  np_ = _get_np(indices, updates)
+  res = np_.zeros(shape, updates.dtype)
+  key = tuple(np_.moveaxis(indices, -1, 0))
+  if np_ is np:
+    res[key] = updates
+  else:
+    res = res.at[key].set(updates)
+  return res
+
+
 # Reduction ops.
 def all_(arr, axis: Union[int, Sequence[int]], keepdims: bool):
   axis = tuple(axis) if isinstance(axis, (list, tuple)) else (axis,)

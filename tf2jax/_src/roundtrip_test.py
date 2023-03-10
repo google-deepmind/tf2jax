@@ -931,7 +931,7 @@ class Jax2TfTest(test_util.TestCase):
   @parameterized.named_parameters(
       chex.params_product(
           (("without_gradient", True),),
-          (("enable_xla", True),),
+          (("enable_xla", True), ("disable_xla", False)),
           (("with_custom_gradient", True),),
           (
               ("lower", True),

@@ -1452,8 +1452,11 @@ class OpsTest(test_util.TestCase):
 
     def scatter_nd(idx, val):
       return tf.raw_ops.ScatterNd(indices=idx, updates=val, shape=shape)
-
     self._test_convert(scatter_nd, [idxs, vals])
+
+    def scatter_nd_static():
+      return tf.zeros((tf.reduce_sum(scatter_nd(idxs, vals),)))
+    self._test_convert(scatter_nd_static, ())
 
   @chex.variants(with_jit=True, without_jit=True)
   def test_select(self):
