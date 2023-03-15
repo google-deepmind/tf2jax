@@ -104,11 +104,37 @@ class OpsTest(test_util.TestCase):
     self._test_convert(assert_fn, [np.array(5) > 0, [np.array(6)]])
 
   @chex.variants(with_jit=True, without_jit=True)
-  @parameterized.parameters("Abs", "Acosh", "Asinh", "Atanh", "Ceil", "Cos",
-                            "Cosh", "Digamma", "Erf", "Erfc", "Erfinv", "Exp",
-                            "Expm1", "Floor", "Lgamma", "Log", "Log1p", "Neg",
-                            "Reciprocal", "Round", "Rsqrt", "Sign", "Sin",
-                            "Sinh", "Sqrt", "Square", "Tan")
+  @parameterized.parameters(
+      "Abs",
+      "Acosh",
+      "Asinh",
+      "Atanh",
+      "BesselI0e",
+      "BesselI1e",
+      "Ceil",
+      "Cos",
+      "Cosh",
+      "Digamma",
+      "Erf",
+      "Erfc",
+      "Erfinv",
+      "Exp",
+      "Expm1",
+      "Floor",
+      "Lgamma",
+      "Log",
+      "Log1p",
+      "Neg",
+      "Reciprocal",
+      "Round",
+      "Rsqrt",
+      "Sign",
+      "Sin",
+      "Sinh",
+      "Sqrt",
+      "Square",
+      "Tan",
+  )
   def test_unary_numerics(self, op_name):
     np.random.seed(42)
     if op_name == "Erfinv":
@@ -1115,6 +1141,24 @@ class OpsTest(test_util.TestCase):
     def pack_static():
       return tf.zeros(pack([10, 10]))
     self._test_convert(pack_static, [])
+
+  @chex.variants(with_jit=True, without_jit=True)
+  @parameterized.parameters(
+      np.int8,
+      np.int16,
+      np.int32,
+      np.int64,
+      np.uint8,
+      np.uint16,
+      np.uint32,
+      np.uint64,
+  )
+  def test_population_count(self, dtype):
+    def population_count(x):
+      return tf.raw_ops.PopulationCount(x=x)
+
+    inputs = np.arange(1000, dtype=dtype)
+    self._test_convert(population_count, inputs)
 
   @chex.variants(with_jit=True, without_jit=True)
   def test_pow(self):
