@@ -712,6 +712,37 @@ class OpsTest(test_util.TestCase):
           jax_fn(actual_inputs)
 
   @chex.variants(with_jit=True, without_jit=True)
+  @parameterized.named_parameters(
+      ("FFT", tf.raw_ops.FFT, (10,)),
+      ("FFT2D", tf.raw_ops.FFT2D, (10, 8)),
+      ("FFT3D", tf.raw_ops.FFT3D, (10, 8, 6)),
+      ("IFFT", tf.raw_ops.IFFT, (10,)),
+      ("IFFT2D", tf.raw_ops.IFFT2D, (10, 8)),
+      ("IFFT3D", tf.raw_ops.IFFT3D, (10, 8, 6)),
+  )
+  def test_fft_ifft(self, fft_op, shape):
+    np.random.seed(42)
+    inputs = np.random.normal(size=(5,) + shape).astype(np.complex64)
+    tols = dict(atol=1e-4) if jax.default_backend().lower() == "cpu" else {}
+    self._test_convert(lambda x: fft_op(input=x), inputs, **tols)
+
+  @chex.variants(with_jit=True, without_jit=True)
+  @parameterized.named_parameters(
+      ("RFFT", tf.raw_ops.RFFT, (10,), np.float32),
+      ("RFFT2D", tf.raw_ops.RFFT2D, (10, 8), np.float32),
+      ("RFFT3D", tf.raw_ops.RFFT3D, (10, 8, 6), np.float32),
+      ("IRFFT", tf.raw_ops.IRFFT, (10,), np.complex64),
+      ("IRFFT2D", tf.raw_ops.IRFFT2D, (10, 8), np.complex64),
+      ("IRFFT3D", tf.raw_ops.IRFFT3D, (10, 8, 6), np.complex64),
+  )
+  def test_rfft_irfft(self, fft_op, shape, dtype):
+    np.random.seed(42)
+    inputs = np.random.normal(size=(5,) + shape).astype(dtype)
+    self._test_convert(
+        lambda x: fft_op(input=x, fft_length=[6] * len(shape)), inputs
+    )
+
+  @chex.variants(with_jit=True, without_jit=True)
   def test_fill(self):
     dims, value = (np.int32(2),), np.int32(3)
 

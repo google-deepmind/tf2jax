@@ -75,6 +75,7 @@ _jax_ops = {
     "ArgMax": _get_jax_op(jnp.argmax, {"T", "Tidx", "output_type"}),
     "ArgMin": _get_jax_op(jnp.argmin, {"T", "Tidx", "output_type"}),
     "Acosh": _get_jax_op(jnp.arccosh, {"T"}),
+    "Angle": _get_jax_op(jnp.angle, {"T", "Tout"}),
     "Asinh": _get_jax_op(jnp.arcsinh, {"T"}),
     "Atanh": _get_jax_op(jnp.arctanh, {"T"}),
     "Atan2": _get_jax_op(jnp.arctan2, {"T"}),
@@ -100,12 +101,32 @@ _jax_ops = {
     "Erfinv": _get_jax_op(jax.lax.erf_inv, {"T"}),
     "Exp": _get_jax_op(jnp.exp, {"T"}),
     "Expm1": _get_jax_op(jnp.expm1, {"T"}),
+    "FFT": _get_jax_op(
+        functools.partial(jnp.fft.fftn, axes=(-1,)), {"Tcomplex"}),
+    "FFT2D": _get_jax_op(
+        functools.partial(jnp.fft.fftn, axes=(-2, -1,)), {"Tcomplex"}),
+    "FFT3D": _get_jax_op(
+        functools.partial(jnp.fft.fftn, axes=(-3, -2, -1,)), {"Tcomplex"}),
     "Floor": _get_jax_op(jnp.floor, {"T"}),
     "FloorMod": _get_jax_op(anp.mod, {"T"}),
     "FloorDiv": _get_jax_op(anp.floor_divide, {"T"}),
     "Greater": _get_jax_op(anp.greater, {"T"}),
     "GreaterEqual": _get_jax_op(anp.greater_equal, {"T"}),
     "Identity": _get_jax_op(lambda x: x, {"T"}),
+    "IFFT": _get_jax_op(
+        functools.partial(jnp.fft.ifftn, axes=(-1,)), {"Tcomplex"}),
+    "IFFT2D": _get_jax_op(
+        functools.partial(jnp.fft.ifftn, axes=(-2, -1,)), {"Tcomplex"}),
+    "IFFT3D": _get_jax_op(
+        functools.partial(jnp.fft.ifftn, axes=(-3, -2, -1,)), {"Tcomplex"}),
+    "IRFFT": _get_jax_op(
+        functools.partial(jnp.fft.irfftn, axes=(-1,)), {"Tcomplex", "Treal"}),
+    "IRFFT2D": _get_jax_op(
+        functools.partial(
+            jnp.fft.irfftn, axes=(-2, -1,)), {"Tcomplex", "Treal"}),
+    "IRFFT3D": _get_jax_op(
+        functools.partial(
+            jnp.fft.irfftn, axes=(-3, -2, -1,)), {"Tcomplex", "Treal"}),
     "Igamma": _get_jax_op(jax.lax.igamma, {"T"}),
     "Igammac": _get_jax_op(jax.lax.igammac, {"T"}),
     "Imag": _get_jax_op(jax.lax.imag, {"T", "Tout"}),
@@ -139,6 +160,14 @@ _jax_ops = {
     "Relu": _get_jax_op(jax.nn.relu, {"T"}),
     "Relu6": _get_jax_op(jax.nn.relu6, {"T"}),
     "ReverseV2": _get_jax_op(anp.flip, {"T", "Tidx"}),
+    "RFFT": _get_jax_op(
+        functools.partial(jnp.fft.rfftn, axes=(-1,)), {"Tcomplex", "Treal"}),
+    "RFFT2D": _get_jax_op(
+        functools.partial(
+            jnp.fft.rfftn, axes=(-2, -1,)), {"Tcomplex", "Treal"}),
+    "RFFT3D": _get_jax_op(
+        functools.partial(
+            jnp.fft.rfftn, axes=(-3, -2, -1,)), {"Tcomplex", "Treal"}),
     "RightShift": _get_jax_op(jnp.right_shift, {"T"}),
     "Round": _get_jax_op(jnp.round, {"T"}),
     "Rsqrt": _get_jax_op(jax.lax.rsqrt, {"T"}),
@@ -178,12 +207,6 @@ _jax_ops = {
     "AssignSubVariableOp": _get_jax_op(jnp.subtract, {"dtype"}),
     "AssignVariableOp": _get_jax_op(
         lambda var, x: x, {"dtype", "validate_shape"}),
-    "RFFT":
-        _get_jax_op(lambda x, a: jnp.fft.rfft(x, a[0]), {"Tcomplex", "Treal"}),
-    "IRFFT":
-        _get_jax_op(lambda x, a: jnp.fft.irfft(x, a[0]), {"Tcomplex", "Treal"}),
-    "Angle":
-        _get_jax_op(jnp.angle, {"T", "Tout"}),
 }
 
 
