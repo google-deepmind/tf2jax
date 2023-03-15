@@ -62,7 +62,7 @@ tf_to_jnp_dtypes = {
 }
 
 
-_NP_LIKES = (np.ndarray, np.number, np.bool_, bool, int, float)
+_NP_LIKES = (np.ndarray, np.number, np.bool_, bool, int, float, complex)
 
 
 # We avoids importing jax2tf.shape_poly.is_poly_dim as jax2tf often depends
