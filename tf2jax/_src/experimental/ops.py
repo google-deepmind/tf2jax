@@ -16,15 +16,24 @@
 
 from typing import Tuple
 
-from absl import logging
-
 import jax
 from jax.interpreters import mlir
+from jax.lib import xla_client as xc
 import jax.numpy as jnp
 from jaxlib.mlir import ir
 
 from tf2jax._src import ops
 from tf2jax._src.experimental import mhlo
+
+
+# See canonicalize_platform for reference
+# https://github.com/google/jax/blob/main/jax/_src/xla_bridge.py#L344
+def _platform_to_alias(platform: str) -> str:
+  aliases = {
+      "cuda": "gpu",
+      "rocm": "gpu",
+  }
+  return aliases.get(platform, platform)
 
 
 @ops.register_operation("XlaCallModule")
@@ -53,16 +62,24 @@ def _xla_call_module(proto):
     raise ValueError("Dynamic shapes is not yet supported, found "
                      f"dim_args_spec={dim_args_spec}.")
 
-  jax_device = jax.default_backend().upper()
-  platforms = tuple(proto.attr["platforms"].list.s)
+  jax_device = jax.default_backend().lower()
+  platforms = tuple(
+      _platform_to_alias(v.decode("utf-8").lower())
+      for v in proto.attr["platforms"].list.s
+  )
   if platforms and jax_device not in platforms:
-    # TODO(shaobohou) Make this an error?
-    message = f"Unsupported backend: `{jax_device}` not in `{platforms}`"
-    logging.warning(message)
+    raise ValueError(
+        f"Unsupported backend: `{jax_device}` not in `{platforms}`"
+    )
 
-  with mlir.make_ir_context():
-    module = ir.Module.parse(proto.attr["module"].s)
-  mhlo_text = mlir.module_to_string(module)
+  if version >= 4:
+    mhlo_text = xc._xla.mlir.deserialize_portable_artifact(  # pylint: disable=protected-access
+        proto.attr["module"].s
+    )
+  else:
+    with mlir.make_ir_context():
+      module = ir.Module.parse(proto.attr["module"].s)
+    mhlo_text = mlir.module_to_string(module)
 
   def _func(*operands: jnp.ndarray) -> Tuple[jnp.ndarray, ...]:
     return mhlo.mhlo_apply(*operands, mhlo_text=mhlo_text)
