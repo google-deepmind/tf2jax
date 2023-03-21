@@ -43,6 +43,14 @@ def _compute_gradients(func, *inputs):
   return jax.grad(lambda *args: jnp.sum(fn(*args)))(*inputs)
 
 
+def uses_native_serialization():
+  # TODO(b/274303739): Clean this up when we have a new JAX release
+  if jax.version.__version__ <= "0.4.6":
+    return jax.config.jax2tf_default_experimental_native_lowering
+  else:
+    return jax.config.jax2tf_default_native_serialization
+
+
 class Jax2TfTest(test_util.TestCase):
 
   def _test_convert(
@@ -55,13 +63,13 @@ class Jax2TfTest(test_util.TestCase):
       with_custom_grad=False,
       grad_tols=None,
   ):
-    if jax.config.jax2tf_default_experimental_native_lowering:
+    if uses_native_serialization():
       if not enable_xla:
-        self.skipTest("native_lowering does not support enable_xla=False.")
+        self.skipTest("native_serialization does not support enable_xla=False.")
       if with_grad and not with_custom_grad:
         self.skipTest(
-            "native_lowering does not support differentiation without custom "
-            "gradient.")
+            "native_serialization does not support differentiation without"
+            "custom gradient.")
 
     grad_tols = grad_tols or {}
     def assert_grad_all_close(*args):
@@ -486,7 +494,7 @@ class Jax2TfTest(test_util.TestCase):
           tf.function(jax2tf.convert(forward), autograph=False), inputs)
       roundtrip_jaxpr = jax.make_jaxpr(roundtrip_forward)(inputs)
       if (use_heuristic and
-          not jax.config.jax2tf_default_experimental_native_lowering):
+          not uses_native_serialization()):
         self.assertNotIn("reduce_window", roundtrip_jaxpr.pretty_print())
 
       if (with_grad and enable_xla and reducer is jax.lax.cumprod and
@@ -629,7 +637,7 @@ class Jax2TfTest(test_util.TestCase):
       )
   )
   def test_polymorphic_shape(self, with_grad, enable_xla):
-    if jax.config.jax2tf_default_experimental_native_lowering:
+    if uses_native_serialization():
       if not enable_xla:
         self.skipTest("native_lowering does not support enable_xla=False.")
 
@@ -675,7 +683,7 @@ class Jax2TfTest(test_util.TestCase):
           named=True,
       ))
   def test_custom_gradient(self, with_grad, enable_xla):
-    if jax.config.jax2tf_default_experimental_native_lowering:
+    if uses_native_serialization():
       if not enable_xla:
         self.skipTest("native_lowering does not support enable_xla=False.")
 
@@ -734,7 +742,7 @@ class Jax2TfTest(test_util.TestCase):
           named=True,
       ))
   def test_custom_gradient_nested(self, with_grad, enable_xla):
-    if jax.config.jax2tf_default_experimental_native_lowering:
+    if uses_native_serialization():
       if not enable_xla:
         self.skipTest("native_lowering does not support enable_xla=False.")
 
@@ -796,7 +804,7 @@ class Jax2TfTest(test_util.TestCase):
           named=True,
       ))
   def test_empty_return(self, enable_xla):
-    if jax.config.jax2tf_default_experimental_native_lowering:
+    if uses_native_serialization():
       if not enable_xla:
         self.skipTest("native_lowering does not support enable_xla=False.")
 
@@ -886,7 +894,7 @@ class Jax2TfTest(test_util.TestCase):
         enable_xla=True,
         with_custom_grad=True)
 
-    if jax.config.jax2tf_default_experimental_native_lowering:
+    if uses_native_serialization():
       self.skipTest("Skip remat jaxpr test with native_lowering.")
 
     # Check jaxpr.
@@ -957,7 +965,7 @@ class Jax2TfTest(test_util.TestCase):
       unit_diagonal,
       shapes,
   ):
-    if jax.config.jax2tf_default_experimental_native_lowering:
+    if uses_native_serialization():
       self.skipTest(
           "native_lowering: Cannot serialize code with custom calls whose "
           "targets have no compatibility guarantees.")
