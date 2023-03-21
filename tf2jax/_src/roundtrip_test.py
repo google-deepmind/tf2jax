@@ -28,7 +28,6 @@ import tensorflow as tf
 from tf2jax._src import config
 from tf2jax._src import test_util
 from tf2jax._src import tf2jax
-from tf2jax._src.experimental import ops as experimental_ops  # pylint: disable=unused-import
 import tree
 
 from tensorflow.compiler.xla import xla_data_pb2  # pytype: disable=import-error
@@ -37,9 +36,13 @@ from tensorflow.compiler.xla import xla_data_pb2  # pytype: disable=import-error
 jax.config.parse_flags_with_absl()
 
 
+def _parse_version(version: str):
+  return tuple(int(x.split("-")[0]) for x in version.split("."))
+
+
 def _compute_gradients(func, *inputs):
   def fn(*args):
-    return jax.tree_leaves(func(*args))[0]
+    return jax.tree_util.tree_leaves(func(*args))[0]
   return jax.grad(lambda *args: jnp.sum(fn(*args)))(*inputs)
 
 
@@ -68,7 +71,7 @@ class Jax2TfTest(test_util.TestCase):
         self.skipTest("native_serialization does not support enable_xla=False.")
       if with_grad and not with_custom_grad:
         self.skipTest(
-            "native_serialization does not support differentiation without"
+            "native_serialization does not support differentiation without "
             "custom gradient.")
 
     grad_tols = grad_tols or {}
@@ -639,7 +642,7 @@ class Jax2TfTest(test_util.TestCase):
   def test_polymorphic_shape(self, with_grad, enable_xla):
     if uses_native_serialization():
       if not enable_xla:
-        self.skipTest("native_lowering does not support enable_xla=False.")
+        self.skipTest("native_serialization does not support enable_xla=False.")
 
     inputs = np.array(range(36), dtype=np.float32).reshape(9, 4)
 
@@ -685,7 +688,7 @@ class Jax2TfTest(test_util.TestCase):
   def test_custom_gradient(self, with_grad, enable_xla):
     if uses_native_serialization():
       if not enable_xla:
-        self.skipTest("native_lowering does not support enable_xla=False.")
+        self.skipTest("native_serialization does not support enable_xla=False.")
 
     inputs = np.array(range(6), dtype=np.float32).reshape(3, 2)
 
@@ -744,7 +747,7 @@ class Jax2TfTest(test_util.TestCase):
   def test_custom_gradient_nested(self, with_grad, enable_xla):
     if uses_native_serialization():
       if not enable_xla:
-        self.skipTest("native_lowering does not support enable_xla=False.")
+        self.skipTest("native_serialization does not support enable_xla=False.")
 
     inputs = np.array(range(6), dtype=np.float32).reshape(3, 2)
 
@@ -806,7 +809,7 @@ class Jax2TfTest(test_util.TestCase):
   def test_empty_return(self, enable_xla):
     if uses_native_serialization():
       if not enable_xla:
-        self.skipTest("native_lowering does not support enable_xla=False.")
+        self.skipTest("native_serialization does not support enable_xla=False.")
 
     np.random.seed(42)
 
@@ -895,7 +898,7 @@ class Jax2TfTest(test_util.TestCase):
         with_custom_grad=True)
 
     if uses_native_serialization():
-      self.skipTest("Skip remat jaxpr test with native_lowering.")
+      self.skipTest("Skip remat jaxpr test with native_serialization.")
 
     # Check jaxpr.
     tf_fn = tf.function(
@@ -967,7 +970,7 @@ class Jax2TfTest(test_util.TestCase):
   ):
     if uses_native_serialization():
       self.skipTest(
-          "native_lowering: Cannot serialize code with custom calls whose "
+          "native_serialization: Cannot serialize code with custom calls whose "
           "targets have no compatibility guarantees.")
 
     np.random.seed(42)
@@ -991,6 +994,33 @@ class Jax2TfTest(test_util.TestCase):
         enable_xla=enable_xla,
         with_custom_grad=with_custom_grad,
         grad_tols=tols)
+
+  def test_explicit_native_serialization(self):
+    if _parse_version(tf.version.VERSION) < _parse_version("2.12.0"):
+      self.skipTest(f"Requires tf 2.12.0 or later, found {tf.version.VERSION}.")
+
+    def forward(x):
+      return x + 3.14
+
+    tf_fn = jax2tf.convert(forward, native_serialization=True)
+    tf_fn = tf.function(tf_fn, autograph=False)
+
+    try:
+      jax_fn = tf2jax.convert_functional(
+          tf_fn, tf.TensorSpec((2, 3), tf.float32)
+      )
+      jax_fn = jax.jit(jax_fn)
+      inputs = np.linspace(-1., 1., 6, dtype=np.float32).reshape((2, 3))
+      self.assertAllClose(jax_fn(inputs), tf_fn(inputs))
+    except ValueError as e:
+      if jax.config.jax2tf_default_native_serialization:
+        raise ValueError("Native lowering support failed.") from e
+      elif r"Unsupported operations in graph: ['XlaCallModule']" not in str(e):
+        raise ValueError("Unexpected unsupported operations found.") from e
+      elif r"check for import error if you see this message" not in str(e):
+        raise ValueError("Import/dependency error message not found.") from e
+      else:  # Expected failure.
+        pass
 
 
 if __name__ == "__main__":
