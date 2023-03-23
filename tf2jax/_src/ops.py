@@ -994,6 +994,19 @@ def _inplace_update(proto):
   return _func
 
 
+@register_operation("LeakyRelu")
+def _leaky_relu(proto):
+  """Parse a LeakyRelu Op."""
+  _check_attrs(proto, {"T", "alpha"})
+
+  alpha = proto.attr["alpha"].f
+
+  def _func(features: jnp.ndarray) -> jnp.ndarray:
+    return jax.nn.leaky_relu(features, alpha)
+
+  return _func
+
+
 @register_operation("LogSoftmax")
 def _log_softmax(proto):
   _check_attrs(proto, {"T"})

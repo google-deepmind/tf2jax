@@ -82,7 +82,7 @@ class OpsTest(test_util.TestCase):
 
   @chex.variants(with_jit=True, without_jit=True)
   @parameterized.parameters("log_softmax", "sigmoid", "softmax", "softplus",
-                            "tanh", "relu", "relu6", "elu")
+                            "tanh", "relu", "relu6", "elu", "leaky_relu")
   def test_activations(self, op_name):
     np.random.seed(42)
     inputs = [np.random.normal(size=(10, 5)).astype(np.float32)]
