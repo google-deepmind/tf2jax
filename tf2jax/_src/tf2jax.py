@@ -36,7 +36,7 @@ from tensorflow.python.framework import op_def_registry  # pylint: disable=no-na
 from tensorflow.python.framework import ops as tf_ops  # pylint: disable=no-name-in-module
 
 try:
-  import tf2jax._src.experimental.ops  # pylint: disable=g-import-not-at-top,unused-import
+  import tf2jax.experimental.ops  # pylint: disable=g-import-not-at-top,unused-import
 except ImportError:
   logging.info(
       "Proceeding without support for experimental ops, e.g. XlaCallModule.")

@@ -24,7 +24,7 @@ import chex
 import jax
 import numpy as np
 
-from tf2jax._src.experimental import mhlo
+from tf2jax.experimental import mhlo
 
 
 def _convert_to_mhlo(jax_fn, inputs, *, dialect):

@@ -28,7 +28,7 @@ from jaxlib.mlir.dialects import mhlo
 
 import numpy as np
 
-from tf2jax._src.experimental import util
+from tf2jax.experimental import util
 
 
 _program_cache: Dict[str, Tuple[str, xc.XlaComputation]] = {}
