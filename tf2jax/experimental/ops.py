@@ -16,12 +16,15 @@
 
 from typing import Tuple
 
+from absl import logging
+
 import jax
 from jax.interpreters import mlir
 from jax.lib import xla_client as xc
 import jax.numpy as jnp
 from jaxlib.mlir import ir
 
+from tf2jax._src import config
 from tf2jax._src import ops
 from tf2jax.experimental import mhlo
 
@@ -62,15 +65,43 @@ def _xla_call_module(proto):
     raise ValueError("Dynamic shapes is not yet supported, found "
                      f"dim_args_spec={dim_args_spec}.")
 
-  jax_device = jax.default_backend().lower()
-  platforms = tuple(
+  target_platforms = tuple(
       _platform_to_alias(v.decode("utf-8").lower())
       for v in proto.attr["platforms"].list.s
   )
-  if platforms and jax_device not in platforms:
-    raise ValueError(
-        f"Unsupported backend: `{jax_device}` not in `{platforms}`"
+
+  def check_platforms():
+    jax_backend = (
+        jax.config.jax_default_device.platform.lower()
+        if jax.config.jax_default_device
+        else jax.default_backend().lower()
     )
+
+    if target_platforms and jax_backend not in target_platforms:
+      platform_message = (
+          f"Unsupported backend: `{jax_backend}` not in `{target_platforms}`."
+      )
+      if config.get_config("xlacallmodule_strict_checks"):
+        error_message = (
+            platform_message
+            + "\n"
+            + "This error can be disabled using either"
+            " tf2jax.update_config('xlacallmodule_strict_checks', False) or"
+            " the context manager"
+            " tf2jax.override_config('xlacallmodule_strict_checks', False)."
+            " You may observe poorer performance or outright failure as a"
+            " result."
+        )
+        raise ValueError(error_message)
+      else:
+        warn_message = (
+            platform_message
+            + "\n"
+            + "Proceeding anyway as"
+            " config.get_config('xlacallmodule_strict_checks') is False. You"
+            " may observe poorer performance or outright failure."
+        )
+        logging.warning(warn_message)
 
   if version >= 4:
     mhlo_text = xc._xla.mlir.deserialize_portable_artifact(  # pylint: disable=protected-access
@@ -82,6 +113,7 @@ def _xla_call_module(proto):
     mhlo_text = mlir.module_to_string(module)
 
   def _func(*operands: jnp.ndarray) -> Tuple[jnp.ndarray, ...]:
+    check_platforms()
     return mhlo.mhlo_apply(*operands, mhlo_text=mhlo_text)
 
   return _func

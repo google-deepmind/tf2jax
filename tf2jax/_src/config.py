@@ -31,6 +31,9 @@ _config = dict(
     resize_bilinear_precision="highest",
     # This is temporary until checkify supports debug mode.
     enable_checkify_for_asserts=False,
+    # Enable checks that each natively serialized computation is executed on a
+    # platform for which it was lowered.
+    xlacallmodule_strict_checks=True,
 )
 
 

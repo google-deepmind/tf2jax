@@ -1020,7 +1020,22 @@ class Jax2TfTest(test_util.TestCase):
       elif r"check for import error if you see this message" not in str(e):
         raise ValueError("Import/dependency error message not found.") from e
       else:  # Expected failure.
-        pass
+        return
+
+    if not uses_native_serialization():
+      raise ValueError(
+          "Unexpected success with native serialization. Test may be "
+          "misconfigured."
+      )
+
+    if jax.default_backend().lower() != "cpu":
+      with jax.default_device(jax.devices("cpu")[0]):
+        with self.assertRaisesRegex(ValueError, "Unsupported backend"):
+          _ = jax_fn(inputs)
+        with tf2jax.config.override_config(
+            "xlacallmodule_strict_checks", False
+        ):
+          self.assertAllClose(jax_fn(inputs), tf_fn(inputs))
 
 
 if __name__ == "__main__":
