@@ -181,7 +181,7 @@ jax_func, jax_params = tf2jax.convert(tf.function(hub_model), tf.zeros_like(x))
 jax_outputs, updated_jax_params = jax_func(jax_params, x)
 ```
 
-## JAX to TensorFlow and Back Again.
+## JAX to TensorFlow and back again.
 
 `tf2jax.convert_functional` can convert the outputs of `jax2tf.convert` back
 into JAX code.
@@ -300,6 +300,49 @@ times due to aggressive constant folding.
 
 See [jax2tf_cumulative_reduction] for more context.
 
+## JAX2TF Native Serialization and XlaCallModule.
+
+From JAX v0.4.7 and onward, `jax2tf.convert` preferred mode of operation (soon
+to be default) is **native serialization** in which the target function is
+lowered to [StableHLO] and wrapped in a single TensorFlow op, `XlaCallModule`.
+
+The new native serialization format will more faithfully reproduce the semantics
+of the target function, at the cost of some reduced flexibility for downstream
+processing as the computation graph is no longer exposed as a tf.Graph.
+
+`XlaCallModule` is supported by TF2JAX from v0.3.4 and onward.
+
+However as this makes use of a custom JAX primitive that aims to encapsulate
+[StableHLO] payload found in `XlaCallModule`, it does not possess JAX rules for
+transformations such as (but not limited to) batching and differentiation.
+
+* **Differentiation**: first order derivative of serialized function is
+still supported through custom gradients requested at serialization time with
+`jax2tf.convert(..., with_gradient=True)`. This is the default behaviour.
+* **Batching**: `jax.vmap` will fail, though users may be able to naively
+replicate the desired behavior with `jax.lax.map`, albeit with poorer
+performance.
+
+### Platform Specificity
+
+Natively serialized JAX programs are platform specific ([link](https://github.com/google/jax/blob/main/jax/experimental/jax2tf/README.md#natively-serialized-jax-modules-are-platform-specific)). Executing a natively
+serialized program on platforms other than the one for which it was lowered,
+would raise a ValueError, e.g.:
+
+```python
+ValueError: Unsupported backend: `cpu` not in `('tpu',)`.
+```
+
+This matches the behaviour of `XlaCallModule`.
+
+Users can disable this check via a config flag, but the resulting program may
+be slower or fail to execute completely.
+
+```python
+with tf2jax.override_config("xlacallmodule_strict_checks", False):
+  jax_func(np.zeros((20, 5), np.float32))
+```
+
 ## Limitations
 
 Currently, only a subset of TensorFlow ops are supported, and not necessarily
@@ -360,3 +403,4 @@ ops.
 [TensorFlow]: https://github.com/tensorflow/tensorflow "TensorFlow on GitHub"
 [jax2tf documentation]: https://github.com/google/jax/blob/master/jax/experimental/jax2tf/README.md#calling-tensorflow-functions-from-jax "jax2tf documentation"
 [jax2tf_cumulative_reduction]: https://github.com/google/jax/blob/main/jax/experimental/jax2tf/jax2tf.py#L2172
+[StableHLO]: https://github.com/openxla/stablehlo
