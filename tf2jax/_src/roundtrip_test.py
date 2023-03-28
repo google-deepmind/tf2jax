@@ -14,6 +14,9 @@
 # ==============================================================================
 """Tests for JAX -> TF -> JAX."""
 
+import os
+
+from absl import flags
 from absl.testing import absltest
 from absl.testing import parameterized
 
@@ -36,6 +39,18 @@ from tensorflow.compiler.xla import xla_data_pb2  # pytype: disable=import-error
 jax.config.parse_flags_with_absl()
 
 
+def _bool_env(varname: str, value: bool) -> bool:
+  val = os.getenv(varname, str(value))
+  return {"1": True, "0": False, "True": True, "False": False}[val]
+
+
+_NATIVE_SERIALIZATION = flags.DEFINE_bool(
+    "use_jax2tf_native_serialization_in_roundtrip_test",
+    _bool_env("USE_JAX2TF_NATIVE_SERIALIZATION_IN_ROUNDTRIP_TEST", False),
+    "Whether to call jax2tf.convert with native serialization enabled.",
+)
+
+
 def _parse_version(version: str):
   return tuple(int(x.split("-")[0]) for x in version.split("."))
 
@@ -46,12 +61,14 @@ def _compute_gradients(func, *inputs):
   return jax.grad(lambda *args: jnp.sum(fn(*args)))(*inputs)
 
 
+def _jax2tf_convert(func, **kwargs):
+  return jax2tf.convert(
+      func, native_serialization=_NATIVE_SERIALIZATION.value, **kwargs
+  )
+
+
 def uses_native_serialization():
-  # TODO(b/274303739): Clean this up when we have a new JAX release
-  if jax.version.__version__ <= "0.4.6":
-    return jax.config.jax2tf_default_experimental_native_lowering
-  else:
-    return jax.config.jax2tf_default_native_serialization
+  return _NATIVE_SERIALIZATION.value
 
 
 class Jax2TfTest(test_util.TestCase):
@@ -85,8 +102,9 @@ class Jax2TfTest(test_util.TestCase):
       jax_grads = _compute_gradients(jax_func, *inputs)
 
     # Jax -> TF
-    tf_func = jax2tf.convert(jax_func, with_gradient=with_grad,
-                             enable_xla=enable_xla)
+    tf_func = _jax2tf_convert(
+        jax_func, with_gradient=with_grad, enable_xla=enable_xla
+    )
     tf_func = tf.function(tf_func, jit_compile=True, autograph=False)
     tf_outputs = tf_func(*inputs)
     jax.tree_map(self.assertAllClose, jax_outputs, tf_outputs)
@@ -494,7 +512,7 @@ class Jax2TfTest(test_util.TestCase):
     with config.override_config("infer_cumulative_reduction_from_jax2tf",
                                 use_heuristic):
       roundtrip_forward = tf2jax.convert_functional(
-          tf.function(jax2tf.convert(forward), autograph=False), inputs)
+          tf.function(_jax2tf_convert(forward), autograph=False), inputs)
       roundtrip_jaxpr = jax.make_jaxpr(roundtrip_forward)(inputs)
       if (use_heuristic and
           not uses_native_serialization()):
@@ -665,7 +683,7 @@ class Jax2TfTest(test_util.TestCase):
     self.assertAllClose(tf_outputs, jax_outputs)
 
     # TF -> JAX -> TF
-    new_tf_forward = jax2tf.convert(
+    new_tf_forward = _jax2tf_convert(
         jax_func,
         polymorphic_shapes=["(b, _)"],
         with_gradient=with_grad,
@@ -705,7 +723,7 @@ class Jax2TfTest(test_util.TestCase):
     expected_grads = jax.grad(forward)(inputs)
 
     # JAX -> TF
-    tf_forward = jax2tf.convert(
+    tf_forward = _jax2tf_convert(
         forward, with_gradient=with_grad, enable_xla=enable_xla)
     tf_forward = tf.function(tf_forward, autograph=False)
 
@@ -765,14 +783,14 @@ class Jax2TfTest(test_util.TestCase):
     expected_grads = jax.grad(forward)(inputs)
 
     # JAX -> TF
-    tf_fn = jax2tf.convert(
+    tf_fn = _jax2tf_convert(
         forward, with_gradient=with_grad, enable_xla=enable_xla)
     tf_fn = tf.function(tf_fn, autograph=False)
 
     # JAX -> TF -> CALL_TF -> TF.
     # This creates dependencies between custom gradients.
     call_tf_fn = jax2tf.call_tf(tf_fn)
-    tf_fn_too = jax2tf.convert(call_tf_fn, with_gradient=with_grad)
+    tf_fn_too = _jax2tf_convert(call_tf_fn, with_gradient=with_grad)
     tf_fn_too = tf.function(tf_fn_too, autograph=False)
 
     # JAX -> TF -> CALL_TF -> TF -> JAX
@@ -826,7 +844,7 @@ class Jax2TfTest(test_util.TestCase):
       jax.grad(forward)(inputs)
 
     # JAX -> TF
-    tf_forward = jax2tf.convert(
+    tf_forward = _jax2tf_convert(
         forward, with_gradient=True, enable_xla=enable_xla)
     tf_forward = tf.function(tf_forward, autograph=False)
 
@@ -870,7 +888,7 @@ class Jax2TfTest(test_util.TestCase):
       jax_fn = tf2jax.convert_functional(tf_fn, x)
       return jnp.sin(self.variant(jax_fn)(x))
 
-    tf2jax2tf_fn = jax2tf.convert(tf2jax_fn)
+    tf2jax2tf_fn = _jax2tf_convert(tf2jax_fn)
     tf2jax2tf_fn = tf.function(tf2jax2tf_fn, autograph=False)
 
     inputs = np.linspace(-1., 1., 6, dtype=np.float32).reshape((2, 3))
@@ -902,7 +920,7 @@ class Jax2TfTest(test_util.TestCase):
 
     # Check jaxpr.
     tf_fn = tf.function(
-        jax2tf.convert(remat_fn, with_gradient=True, enable_xla=True),
+        _jax2tf_convert(remat_fn, with_gradient=True, enable_xla=True),
         autograph=False)
     jax_fn = tf2jax.convert_functional(tf_fn, tf.TensorSpec((10, 5),
                                                             tf.float32))
@@ -1013,7 +1031,7 @@ class Jax2TfTest(test_util.TestCase):
       inputs = np.linspace(-1., 1., 6, dtype=np.float32).reshape((2, 3))
       self.assertAllClose(jax_fn(inputs), tf_fn(inputs))
     except ValueError as e:
-      if jax.config.jax2tf_default_native_serialization:
+      if uses_native_serialization():
         raise ValueError("Native lowering support failed.") from e
       elif r"Unsupported operations in graph: ['XlaCallModule']" not in str(e):
         raise ValueError("Unexpected unsupported operations found.") from e
