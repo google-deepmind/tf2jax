@@ -87,7 +87,7 @@ def mhlo_apply_abstract_eval(*args, mhlo_text: str):
   result_spec = program.program_shape().result_shape()
   assert result_spec.is_tuple()
   return tuple([
-      jax.ShapedArray(spec.dimensions(), spec.element_type())
+      core.ShapedArray(spec.dimensions(), spec.element_type())
       for spec in result_spec.tuple_shapes()
   ])
 
