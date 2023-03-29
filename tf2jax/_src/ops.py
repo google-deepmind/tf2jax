@@ -1736,7 +1736,7 @@ def _stateless_random_normal_v2(proto):
   jax_dtype = anp.get_jax_dtype(dtype)
 
   def _func(
-      shape: jnp.ndarray,
+      shape: Sequence[int],
       key: jnp.ndarray,
       counter: jnp.ndarray,
       alg: jnp.ndarray,
@@ -1756,7 +1756,7 @@ def _stateless_random_uniform_v2(proto):
   jax_dtype = anp.get_jax_dtype(dtype)
 
   def _func(
-      shape: jnp.ndarray,
+      shape: Sequence[int],
       key: jnp.ndarray,
       counter: jnp.ndarray,
       alg: jnp.ndarray,
