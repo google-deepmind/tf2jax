@@ -317,6 +317,100 @@ def _avg_pool(proto):
   return _func
 
 
+@register_operation("BatchToSpaceND")
+def _batch_to_space_nd(proto):
+  """Parse a BatchToSpaceND Op."""
+  _check_attrs(proto, {"T", "Tblock_shape", "Tcrops"})
+
+  def _func(
+      operand: jnp.ndarray, block_shape: jnp.ndarray, crops: jnp.ndarray
+  ) -> jnp.ndarray:
+    batch, *other_shape = list(operand.shape)
+    block_shape = block_shape.tolist()
+    num_spatial = len(block_shape)
+    crops = crops.tolist()
+    spatial_shape = other_shape[:num_spatial]
+    remaining_shape = other_shape[num_spatial:]
+
+    new_shape = (
+        block_shape
+        + [batch // np.prod(block_shape)]
+        + spatial_shape
+        + remaining_shape
+    )
+    reshaped = operand.reshape(new_shape)
+
+    permuted_axes = [num_spatial]
+    for idx in range(num_spatial):
+      permuted_axes.extend([idx + 1 + num_spatial, idx])
+    permuted_axes.extend(list(range(num_spatial * 2 + 1, len(new_shape))))
+    permuted = jnp.transpose(reshaped, axes=permuted_axes)
+
+    uncropped_shape = [new_shape[num_spatial]]
+    for idx in range(num_spatial):
+      uncropped_shape.append(block_shape[idx] * spatial_shape[idx])
+    uncropped_shape.extend(remaining_shape)
+    uncropped = permuted.reshape(uncropped_shape)
+
+    cropped_slice = [slice(None)]
+    for idx in range(num_spatial):
+      cropped_slice.append(
+          slice(crops[idx][0], uncropped_shape[1 + idx] - crops[idx][1])
+      )
+    cropped_slice += [slice(None)] * len(remaining_shape)
+    cropped = uncropped[tuple(cropped_slice)]
+
+    return cropped
+
+  return _func
+
+
+@register_operation("SpaceToBatchND")
+def _space_to_batch_nd(proto):
+  """Parse a SpaceToBatchND Op."""
+  _check_attrs(proto, {"T", "Tblock_shape", "Tpaddings"})
+
+  def _func(
+      operand: jnp.ndarray, block_shape: jnp.ndarray, paddings: jnp.ndarray
+  ) -> jnp.ndarray:
+    batch, *other_shape = list(operand.shape)
+    block_shape = block_shape.tolist()
+    num_spatial = len(block_shape)
+    paddings = paddings.tolist()
+    remaining_shape = other_shape[num_spatial:]
+
+    paddings = [[0, 0]] + paddings + [[0, 0]] * len(remaining_shape)
+    padded = jnp.pad(operand, paddings)
+    padded_shape = padded.shape
+
+    new_shape = [batch]
+    for idx in range(num_spatial):
+      new_shape.extend(
+          [padded_shape[idx + 1] // block_shape[idx], block_shape[idx]]
+      )
+    new_shape.extend(remaining_shape)
+    reshaped = padded.reshape(new_shape)
+
+    permuted_axes = []
+    for idx in range(num_spatial):
+      permuted_axes.append(idx * 2 + 2)
+    permuted_axes += [0]
+    for idx in range(num_spatial):
+      permuted_axes.append(idx * 2 + 1)
+    permuted_axes.extend(list(range(num_spatial * 2 + 1, len(new_shape))))
+    permuted = jnp.transpose(reshaped, axes=permuted_axes)
+
+    flatten_shape = [batch * np.prod(block_shape)]
+    for idx in range(num_spatial):
+      flatten_shape.append(padded_shape[idx + 1] // block_shape[idx])
+    flatten_shape.extend(remaining_shape)
+    flattened = permuted.reshape(flatten_shape)
+
+    return flattened
+
+  return _func
+
+
 @register_operation("BiasAdd")
 def _bias_add(proto):
   """Parse a BiasAdd Op."""

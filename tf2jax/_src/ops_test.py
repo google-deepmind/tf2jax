@@ -336,6 +336,120 @@ class OpsTest(test_util.TestCase):
 
   @chex.variants(with_jit=True, without_jit=True)
   @parameterized.named_parameters(
+      (
+          "case0",
+          [
+              [[[1]]],
+              [[[2]]],
+              [[[3]]],
+              [[[4]]],
+          ],
+          (2, 2),
+          [[0, 0], [0, 0]],
+      ),
+      (
+          "case1",
+          [
+              [[[1, 2, 3]]],
+              [[[4, 5, 6]]],
+              [[[7, 8, 9]]],
+              [[[10, 11, 12]]],
+          ],
+          (2, 2),
+          [[0, 0], [0, 0]],
+      ),
+      (
+          "case2",
+          [
+              [[[1], [3]], [[9], [11]]],
+              [[[2], [4]], [[10], [12]]],
+              [[[5], [7]], [[13], [15]]],
+              [[[6], [8]], [[14], [16]]],
+          ],
+          (2, 2),
+          [[0, 0], [0, 0]],
+      ),
+      (
+          "case3",
+          [
+              [[[0], [1], [3]]],
+              [[[0], [9], [11]]],
+              [[[0], [2], [4]]],
+              [[[0], [10], [12]]],
+              [[[0], [5], [7]]],
+              [[[0], [13], [15]]],
+              [[[0], [6], [8]]],
+              [[[0], [14], [16]]],
+          ],
+          (2, 2),
+          [[0, 0], [2, 0]],
+      ),
+  )
+  def test_batch_to_space_nd(self, inputs, block_shape, crops):
+    inputs = np.array(inputs)
+    block_shape = np.array(block_shape)
+    crops = np.array(crops)
+
+    def batch_to_space(x):
+      return tf.raw_ops.BatchToSpaceND(
+          input=x, block_shape=block_shape, crops=crops
+      )
+
+    self._test_convert(batch_to_space, [inputs])
+
+  @chex.variants(with_jit=True, without_jit=True)
+  @parameterized.named_parameters(
+      (
+          "case0",
+          [
+              [[[1], [2]], [[3], [4]]],
+          ],
+          (2, 2),
+          [[0, 0], [0, 0]],
+      ),
+      (
+          "case1",
+          [
+              [[[1, 2, 3], [4, 5, 6]], [[7, 8, 9], [10, 11, 12]]],
+          ],
+          (2, 2),
+          [[0, 0], [0, 0]],
+      ),
+      (
+          "case2",
+          [[
+              [[1], [2], [3], [4]],
+              [[5], [6], [7], [8]],
+              [[9], [10], [11], [12]],
+              [[13], [14], [15], [16]],
+          ]],
+          (2, 2),
+          [[0, 0], [0, 0]],
+      ),
+      (
+          "case3",
+          [
+              [[[1], [2], [3], [4]], [[5], [6], [7], [8]]],
+              [[[9], [10], [11], [12]], [[13], [14], [15], [16]]],
+          ],
+          (2, 2),
+          [[0, 0], [2, 0]],
+      ),
+  )
+  def test_space_to_batch_nd(self, inputs, block_shape, paddings):
+    inputs = np.array(inputs)
+    block_shape = np.array(block_shape)
+    paddings = np.array(paddings)
+
+    def space_to_batch(x):
+      return tf.raw_ops.SpaceToBatchND(
+          input=x, block_shape=block_shape, paddings=paddings
+      )
+
+    self._test_convert(space_to_batch, [inputs])
+
+  @chex.variants(with_jit=True, without_jit=True)
+  @parameterized.named_parameters(
       chex.params_product(
           (("NHWC", "NHWC"), ("NCHW", "NCHW")),
           (
