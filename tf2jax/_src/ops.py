@@ -2199,7 +2199,7 @@ def _tensor_scatter_update(proto):
 
 @register_operation("TopKV2")
 def _top_k(proto):
-  _check_attrs(proto, {"T", "sorted"})
+  _check_attrs(proto, {"T", "sorted", "Tk", "index_type"})
   sorted_arg = proto.attr["sorted"].b
   if not sorted_arg:
     raise ValueError("sorted=False in TopKV2 is not yet supported.")
