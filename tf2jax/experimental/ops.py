@@ -49,6 +49,7 @@ def _xla_call_module(proto):
           "Sout",
           "Tout",
           "dim_args_spec",
+          "function_list",
           "module",
           "version",
           "platforms",
@@ -64,6 +65,13 @@ def _xla_call_module(proto):
   if dim_args_spec:
     raise ValueError("Dynamic shapes is not yet supported, found "
                      f"dim_args_spec={dim_args_spec}.")
+
+  function_list = tuple(proto.attr["function_list"].list.func)
+  if function_list:
+    raise ValueError(
+        "function_list is not yet supported for custom calls, found "
+        f"{function_list=}"
+    )
 
   target_platforms = tuple(
       _platform_to_alias(v.decode("utf-8").lower())
