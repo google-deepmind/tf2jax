@@ -1026,6 +1026,13 @@ class OpsTest(test_util.TestCase):
 
   @chex.variants(with_jit=True, without_jit=True)
   def test_inplace_add(self):
+    if test_util.parse_version(tf.version.VERSION) >= test_util.parse_version(
+        "2.14.0"
+    ):
+      self.skipTest(
+          f"Requires earlier than tf 2.14.0, found {tf.version.VERSION}."
+      )
+
     np.random.seed(42)
 
     @tf.function
@@ -1054,6 +1061,13 @@ class OpsTest(test_util.TestCase):
 
   @chex.variants(with_jit=True, without_jit=True)
   def test_inplace_update(self):
+    if test_util.parse_version(tf.version.VERSION) >= test_util.parse_version(
+        "2.14.0"
+    ):
+      self.skipTest(
+          f"Requires earlier than tf 2.14.0, found {tf.version.VERSION}."
+      )
+
     np.random.seed(42)
 
     @tf.function

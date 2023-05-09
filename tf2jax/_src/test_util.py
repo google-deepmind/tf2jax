@@ -23,6 +23,10 @@ import jax
 import tensorflow as tf
 
 
+def parse_version(version: str):
+  return tuple(int(x.split("-")[0]) for x in version.split("."))
+
+
 class TestCase(parameterized.TestCase, tf.test.TestCase):
   """Base class for all tests."""
 
