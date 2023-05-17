@@ -17,6 +17,7 @@
 import collections
 import inspect
 import itertools
+import json
 from typing import Any, Callable, Iterable, Iterator, Optional, Mapping, NamedTuple, Sequence, Tuple, Union
 
 from absl import logging
@@ -841,6 +842,41 @@ class _GraphDef(NamedTuple):
   node: Tuple[Union[tf.compat.v1.NodeDef, _NodeDef], ...]
 
 
+def _validate_inputs(
+    signature: inspect.Signature,
+    structured_specs: Any,
+    input_map: Mapping[str, Any],
+) -> str:
+  """Validate inputs against input specs."""
+
+  class _ExpectedArg:
+    def __init__(self, path: Tuple[Any, ...], spec: Any):
+      self.path = path
+      self.spec = spec
+
+  expected_args = [
+      _ExpectedArg(p, v) for p, v in tree.flatten_with_path(structured_specs)
+  ]
+  expected_tree = tree.unflatten_as(structured_specs, expected_args)
+
+  def format_spec(spec: tf.TensorSpec) -> str:
+    return "{}[{}]".format(spec.dtype.name, ",".join(map(str, spec.shape)))
+
+  def check_arg(arg: _ExpectedArg):
+    arg_desc = "UNUSED" if arg.spec is _UNUSED_INPUT else format_spec(arg.spec)
+    return "." if arg.path in input_map else arg_desc
+
+  checked_args, checked_kwargs = tree.map_structure(check_arg, expected_tree)
+  bound_checked_args = signature.bind(*checked_args, **checked_kwargs)
+  # TODO(b/282901848) Use a better pretty printer than json which does not
+  # render namedtuple correctly.
+  return json.dumps(bound_checked_args.arguments, indent=4)
+
+
+class MissingInputError(Exception):
+  ...
+
+
 def _convert(
     graphdef: Union[tf.compat.v1.GraphDef, _GraphDef],
     signature: inspect.Signature,
@@ -1015,7 +1051,15 @@ def _convert(
     bound_args.apply_defaults()
     inputs = dict(
         tree.flatten_with_path((bound_args.args, bound_args.kwargs)))
-    inputs = tuple([inputs[p] for p, _ in input_path_to_specs])
+    try:
+      inputs = tuple([inputs[p] for p, _ in input_path_to_specs])
+    except KeyError as e:
+      input_err_message = _validate_inputs(signature, structured_inputs, inputs)
+      err_message = (
+          "\nSome input(s) are missing (entries that map to dtype[shape]"
+          f" annotations in the following structure): \n{input_err_message}"
+      )
+      raise MissingInputError(err_message) from e
 
     if len(inputs) != len(input_names):
       raise ValueError(

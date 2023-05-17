@@ -533,6 +533,24 @@ class FeaturesTest(tf.test.TestCase, parameterized.TestCase):
     self.assertAllClose(inputs + 3.14, outputs[2])
 
   @chex.variants(with_jit=True, without_jit=True)
+  def test_missing_inputs(self):
+    params = dict(
+        a=np.array(3.14, np.float32), b=np.array([42, 47], np.float32)
+    )
+
+    @tf.function
+    def tf_func(x, params):
+      return x + params["a"] + params["b"]
+
+    np_inputs = np.array(range(6), dtype=np.float32).reshape(3, 2)
+    jax_func = tf2jax.convert_functional(
+        tf_func, *tree.map_structure(np.zeros_like, (np_inputs, params))
+    )
+
+    with self.assertRaises(tf2jax.MissingInputError):
+      self.variant(jax_func)(np_inputs, {"a": params["a"]})
+
+  @chex.variants(with_jit=True, without_jit=True)
   def test_missing_params(self):
     variables = dict(
         a=tf.Variable(3.14, trainable=True, name="aaa"),

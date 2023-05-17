@@ -25,6 +25,8 @@ from tf2jax._src.tf2jax import convert_from_restored
 from tf2jax._src.tf2jax import convert_functional
 from tf2jax._src.tf2jax import convert_functional_from_restored
 
+from tf2jax._src.tf2jax import MissingInputError
+
 __version__ = "0.3.5"
 
 #  _________________________________________
