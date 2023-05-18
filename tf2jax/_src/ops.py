@@ -23,6 +23,7 @@ from absl import logging
 import jax
 from jax._src.lax import control_flow as lax_control_flow
 from jax.experimental import checkify
+from jax.lib import xla_client
 import jax.numpy as jnp
 import numpy as np
 import tensorflow as tf
@@ -2419,13 +2420,20 @@ def _xla_sharding(proto):
   """Parse a XlaSharding op."""
   _check_attrs(proto, {"T", "sharding", "unspecified_dims"})
 
-  sharding = proto.attr["sharding"].s
-  if sharding:
-    raise ValueError(
-        f"Sharding is not yet supported (except identity), found {proto}."
-    )
+  sharding = xla_client.OpSharding()
+  sharding.ParseFromString(proto.attr["sharding"].s)
+  jax_sharding = jax.sharding.GSPMDSharding(jax.devices(), sharding)
 
-  return lambda x: x
+  unspecified_dims = tuple(proto.attr["unspecified_dims"].list.i)
+  if unspecified_dims:
+    raise ValueError(f"{unspecified_dims=} is not yet supported.")
+
+  # TODO(b/235450851) Remove jax.jit once wsc is usable outside of jit.
+  @jax.jit
+  def _func(x: jnp.ndarray) -> jnp.ndarray:
+    return jax.lax.with_sharding_constraint(x, jax_sharding)
+
+  return _func
 
 
 def _maybe_get_jaxpreqn(
