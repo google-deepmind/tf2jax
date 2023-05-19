@@ -2420,13 +2420,19 @@ def _xla_sharding(proto):
   """Parse a XlaSharding op."""
   _check_attrs(proto, {"T", "sharding", "unspecified_dims"})
 
-  sharding = xla_client.OpSharding()
-  sharding.ParseFromString(proto.attr["sharding"].s)
-  jax_sharding = jax.sharding.GSPMDSharding(jax.devices(), sharding)
-
   unspecified_dims = tuple(proto.attr["unspecified_dims"].list.i)
   if unspecified_dims:
     raise ValueError(f"{unspecified_dims=} is not yet supported.")
+
+  sharding_str = proto.attr["sharding"].s
+
+  # Return identity if sharding annotation is empty.
+  if not sharding_str:
+    return lambda x: x
+
+  sharding = xla_client.OpSharding()
+  sharding.ParseFromString(sharding_str)
+  jax_sharding = jax.sharding.GSPMDSharding(jax.devices(), sharding)
 
   # TODO(b/235450851) Remove jax.jit once wsc is usable outside of jit.
   @jax.jit
