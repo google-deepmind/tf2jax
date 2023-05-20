@@ -694,6 +694,12 @@ class _Subgraph(NamedTuple):
         if node == self.output_node:
           new_nodes.append(self)
       else:
+        # Rewire control inputs to point to the subgraph.
+        new_control_inputs = tuple(
+            v._replace(op_name=self.name) if v.op_name in subgraph_map else v
+            for v in node.control_inputs
+        )
+        node.control_inputs = new_control_inputs
         new_nodes.append(node)
 
     assert len(processed) == len(subgraph)
