@@ -53,6 +53,7 @@ def _xla_call_module(proto):
           "module",
           "version",
           "platforms",
+          "has_token_input_output",
       },
   )
 
@@ -71,6 +72,13 @@ def _xla_call_module(proto):
     raise ValueError(
         "function_list is not yet supported for custom calls, found "
         f"{function_list=}"
+    )
+
+  has_token_input_output = proto.attr["has_token_input_output"].b
+  if has_token_input_output:
+    raise ValueError(
+        "has_token_input_output is not yet supported for custom calls, found "
+        f"{has_token_input_output=}"
     )
 
   target_platforms = tuple(
