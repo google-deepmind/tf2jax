@@ -50,6 +50,7 @@ def _xla_call_module(proto):
           "Tout",
           "dim_args_spec",
           "function_list",
+          "has_token_input_output",
           "module",
           "version",
           "platforms",
