@@ -54,6 +54,7 @@ def _xla_call_module(proto):
           "version",
           "platforms",
           "has_token_input_output",
+          "disabled_checks",
       },
   )
 
@@ -79,6 +80,13 @@ def _xla_call_module(proto):
     raise ValueError(
         "has_token_input_output is not yet supported for custom calls, found "
         f"{has_token_input_output=}"
+    )
+
+  disabled_checks = tuple(proto.attr["disabled_checks"].list.s)
+  if disabled_checks:
+    logging.warning(
+        "XlaCallModule was serialized with the following disabled checks: %s",
+        disabled_checks,
     )
 
   target_platforms = tuple(
