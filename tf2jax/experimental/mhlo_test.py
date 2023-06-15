@@ -63,8 +63,10 @@ class MhloTest(chex.TestCase):
     inputs = (np.ones((3, 2), dtype=np.float32) * 10,)
     mhlo_text = _convert_to_mhlo(
         fn, jax.tree_map(np.zeros_like, inputs), dialect=dialect)
+    mhlo_module = mhlo.MhloModule(module=mhlo_text, fun_name="test_module")
+
     chex.assert_trees_all_close(
-        mhlo.mhlo_apply(*inputs, mhlo_text=mhlo_text), fn(*inputs))
+        mhlo.mhlo_apply(*inputs, module=mhlo_module), fn(*inputs))
 
     def make_top_fn(sub_fn):
       def top_fn(x):
@@ -73,7 +75,7 @@ class MhloTest(chex.TestCase):
 
     expect_top_fn = make_top_fn(fn)
     actual_top_fn = make_top_fn(
-        functools.partial(mhlo.mhlo_apply, mhlo_text=mhlo_text))
+        functools.partial(mhlo.mhlo_apply, module=mhlo_module))
     self._assert_all_close(expect_top_fn, actual_top_fn, inputs)
     _check_transforms(actual_top_fn, inputs, dialect=dialect)
 
@@ -93,8 +95,9 @@ class MhloTest(chex.TestCase):
     )
     mhlo_text = _convert_to_mhlo(
         fn, jax.tree_map(np.zeros_like, inputs), dialect=dialect)
+    mhlo_module = mhlo.MhloModule(module=mhlo_text, fun_name="test_module")
     chex.assert_trees_all_close(
-        mhlo.mhlo_apply(*inputs, mhlo_text=mhlo_text), fn(*inputs))
+        mhlo.mhlo_apply(*inputs, module=mhlo_module), fn(*inputs))
 
     def make_top_fn(sub_fn):
       def top_fn(x, y):
@@ -103,7 +106,7 @@ class MhloTest(chex.TestCase):
 
     expect_top_fn = make_top_fn(fn)
     actual_top_fn = make_top_fn(
-        functools.partial(mhlo.mhlo_apply, mhlo_text=mhlo_text))
+        functools.partial(mhlo.mhlo_apply, module=mhlo_module))
     self._assert_all_close(expect_top_fn, actual_top_fn, inputs)
     _check_transforms(actual_top_fn, inputs, dialect=dialect)
 
@@ -123,8 +126,9 @@ class MhloTest(chex.TestCase):
     )
     mhlo_text = _convert_to_mhlo(
         fn, jax.tree_map(np.zeros_like, inputs), dialect=dialect)
+    mhlo_module = mhlo.MhloModule(module=mhlo_text, fun_name="test_module")
     chex.assert_trees_all_close(
-        mhlo.mhlo_apply(*inputs, mhlo_text=mhlo_text), fn(*inputs))
+        mhlo.mhlo_apply(*inputs, module=mhlo_module), fn(*inputs))
 
     def make_top_fn(sub_fn):
       def top_fn(x, y):
@@ -134,7 +138,7 @@ class MhloTest(chex.TestCase):
 
     expect_top_fn = make_top_fn(fn)
     actual_top_fn = make_top_fn(
-        functools.partial(mhlo.mhlo_apply, mhlo_text=mhlo_text))
+        functools.partial(mhlo.mhlo_apply, module=mhlo_module))
     self._assert_all_close(expect_top_fn, actual_top_fn, inputs)
     _check_transforms(actual_top_fn, inputs, dialect=dialect)
 

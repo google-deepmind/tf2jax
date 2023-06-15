@@ -14,6 +14,7 @@
 # ==============================================================================
 """MHLO JAX primitive"."""
 
+import dataclasses
 import functools
 import threading
 from typing import Any, Dict, Tuple
@@ -36,6 +37,15 @@ _program_lock = threading.Lock()
 
 mhlo_apply_p = core.Primitive("mhlo_apply")
 mhlo_apply_p.multiple_results = True
+
+
+@dataclasses.dataclass(frozen=True)
+class MhloModule:
+  module: str  # string representation of the MLIR module.
+  fun_name: str
+
+  def __str__(self):
+    return f"MhloModule(fun_name={self.fun_name}, ...)"
 
 
 def _get_program(mhlo_text: str) -> Tuple[str, xc.XlaComputation]:
@@ -61,8 +71,8 @@ def _get_compiled_program(mhlo_text: str, backend: Any) -> Any:
   return executable
 
 
-def mhlo_apply(*args, mhlo_text: str):
-  ret = mhlo_apply_p.bind(*args, mhlo_text=mhlo_text)
+def mhlo_apply(*args, module: MhloModule):
+  ret = mhlo_apply_p.bind(*args, module=module)
   # TODO(shaobohou) Unpack singleton result?
   if len(ret) == 1:
     return ret[0]
@@ -70,9 +80,9 @@ def mhlo_apply(*args, mhlo_text: str):
     return tuple(ret)
 
 
-def mhlo_apply_impl(*args, mhlo_text: str):
+def mhlo_apply_impl(*args, module: MhloModule):
   backend = jax.lib.xla_bridge.get_backend()
-  executable = _get_compiled_program(mhlo_text, backend)
+  executable = _get_compiled_program(module.module, backend)
   return jax.lib.xla_client.execute_with_python_values(
       executable=executable,
       arguments=[np.asarray(x) for x in args],
@@ -81,9 +91,9 @@ def mhlo_apply_impl(*args, mhlo_text: str):
 mhlo_apply_p.def_impl(mhlo_apply_impl)
 
 
-def mhlo_apply_abstract_eval(*args, mhlo_text: str):
+def mhlo_apply_abstract_eval(*args, module: MhloModule):
   del args
-  _, program = _get_program(mhlo_text)
+  _, program = _get_program(module.module)
   result_spec = program.program_shape().result_shape()
   assert result_spec.is_tuple()
   return tuple([
@@ -94,9 +104,11 @@ def mhlo_apply_abstract_eval(*args, mhlo_text: str):
 mhlo_apply_p.def_abstract_eval(mhlo_apply_abstract_eval)
 
 
-def mhlo_apply_lowering(ctx: mlir.LoweringRuleContext, *args, mhlo_text: str):
+def mhlo_apply_lowering(
+    ctx: mlir.LoweringRuleContext, *args, module: MhloModule
+):
   """Lowering rule."""
-  program_name, program = _get_program(mhlo_text)
+  program_name, program = _get_program(module.module)
   assert program.program_shape().result_shape().is_tuple()
 
   module_ctx = ctx.module_context

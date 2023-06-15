@@ -136,8 +136,10 @@ def _xla_call_module(proto):
       module = ir.Module.parse(proto.attr["module"].s)
     mhlo_text = mlir.module_to_string(module)
 
+  mhlo_module = mhlo.MhloModule(module=mhlo_text, fun_name=proto.name)
+
   def _func(*operands: jnp.ndarray) -> Tuple[jnp.ndarray, ...]:
     check_platforms()
-    return mhlo.mhlo_apply(*operands, mhlo_text=mhlo_text)
+    return mhlo.mhlo_apply(*operands, module=mhlo_module)
 
   return _func
