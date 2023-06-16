@@ -695,6 +695,82 @@ class Jax2TfTest(test_util.TestCase):
   @chex.variants(with_jit=True)
   @parameterized.named_parameters(
       chex.params_product(
+          (("without_gradient", False), ("with_gradient", True)),
+          (("disable_xla", False), ("enable_xla", True)),
+          named=True,
+      )
+  )
+  def test_polymorphic_shape_refinement_dot(self, with_grad, enable_xla):
+    if uses_native_serialization():
+      if not enable_xla:
+        self.skipTest("native_serialization does not support enable_xla=False.")
+
+    @jax.jit
+    def forward(x, w):
+      return jnp.dot(x, w)
+
+    x = np.array(range(12), dtype=np.float32).reshape((3, 4))
+    w = np.array(range(20), dtype=np.float32).reshape((4, 5))
+    expected_outputs = forward(x, w)
+
+    tf_fn = _jax2tf_convert(
+        forward,
+        polymorphic_shapes=["(b, _)", None],
+        with_gradient=with_grad,
+        enable_xla=enable_xla)
+    tf_fn = tf.function(tf_fn, autograph=False)
+    concrete_tf_fn = tf_fn.get_concrete_function(
+        tf.TensorSpec(shape=(None, 4)), tf.TensorSpec(shape=(4, 5)))
+    tf_outputs = concrete_tf_fn(x, w)
+    self.assertAllClose(expected_outputs, tf_outputs)
+
+    jax_fn = tf2jax.convert_functional(
+        tf_fn, np.zeros_like(x), np.zeros_like(w)
+    )
+    jax_outputs = self.variant(jax_fn)(x, w)
+    self.assertAllClose(expected_outputs, jax_outputs)
+
+  @chex.variants(with_jit=True)
+  @parameterized.named_parameters(
+      chex.params_product(
+          (("without_gradient", False), ("with_gradient", True)),
+          (("disable_xla", False), ("enable_xla", True)),
+          named=True,
+      )
+  )
+  def test_polymorphic_shape_refinement_broadcast(self, with_grad, enable_xla):
+    if uses_native_serialization():
+      if not enable_xla:
+        self.skipTest("native_serialization does not support enable_xla=False.")
+
+    @jax.jit
+    def forward(x, y):
+      return (jnp.broadcast_to(x, y.shape), x + y)
+
+    x = np.array(range(12), dtype=np.float32).reshape((3, 4))
+    y = np.array(range(24), dtype=np.float32).reshape((2, 3, 4))
+    expected_outputs = forward(x, y)
+
+    tf_fn = _jax2tf_convert(
+        forward,
+        polymorphic_shapes=["(b, _)", "(_, b, _)"],
+        with_gradient=with_grad,
+        enable_xla=enable_xla)
+    tf_fn = tf.function(tf_fn, autograph=False)
+    concrete_tf_fn = tf_fn.get_concrete_function(
+        tf.TensorSpec(shape=(None, 4)), tf.TensorSpec(shape=(2, None, 4)))
+    tf_outputs = concrete_tf_fn(x, y)
+    self.assertAllClose(expected_outputs, tf_outputs)
+
+    jax_fn = tf2jax.convert_functional(
+        tf_fn, np.zeros_like(x), np.zeros_like(y)
+    )
+    jax_outputs = self.variant(jax_fn)(x, y)
+    self.assertAllClose(expected_outputs, jax_outputs)
+
+  @chex.variants(with_jit=True)
+  @parameterized.named_parameters(
+      chex.params_product(
           (("with_gradient", True),),
           (("disable_xla", False), ("enable_xla", True)),
           named=True,

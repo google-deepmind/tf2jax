@@ -104,6 +104,31 @@ def mhlo_apply_abstract_eval(*args, module: MhloModule):
 mhlo_apply_p.def_abstract_eval(mhlo_apply_abstract_eval)
 
 
+# Taken from
+# github.com/google/jax/blob/main/jax/experimental/jax2tf/jax_export.py#L859
+def refine_polymorphic_shapes(module: ir.Module) -> ir.Module:
+  """Refine the polymorphic shapes inside a module.
+
+  Given a module with static input shapes, but using dynamic shapes due to
+  shape polymorphism, run shape refinement to resolve all the dynamic shapes.
+
+  Args:
+    module: A module with static input shapes but dynamic shapes inside.
+
+  Returns:
+    The refined module.
+  """
+  if xc.mlir_api_version < 50:
+    raise NotImplementedError("refine_polymorphic_shapes needs jaxlib 0.4.12")
+
+  refined_module_str = xc._xla.mlir.refine_polymorphic_shapes(  # pylint: disable=protected-access
+      mlir.module_to_bytecode(module)
+  )
+  context = mlir.make_ir_context()
+  with context:
+    return ir.Module.parse(refined_module_str)
+
+
 def mhlo_apply_lowering(
     ctx: mlir.LoweringRuleContext, *args, module: MhloModule
 ):
