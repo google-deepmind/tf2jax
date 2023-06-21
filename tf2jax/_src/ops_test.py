@@ -2283,6 +2283,27 @@ class OpsTest(test_util.TestCase):
     ):
       self._test_convert(var_handle, [])
 
+  @chex.variants(with_jit=True, without_jit=True)
+  @parameterized.parameters(
+      "LowerBound",
+      "UpperBound",
+      "SearchSorted",
+  )
+  def test_lower_upper_bound(self, op_name):
+    np.random.seed(42)
+    inputs = (
+        np.array([[0, 1, 2, 3, 4], [-4, -3, -2, -1, 0]], dtype=np.float32),
+        np.array(
+            [[3.5, 0, 1.5, 10, -1], [-3.5, 0, -1.5, -10, 1]], dtype=np.float32)
+    )
+    if op_name == "SearchSorted":
+      tf_func = lambda x, y: tf.searchsorted(x, y, out_type=tf.int32)
+    else:
+      # LowerBound and UpperBound expect keyword arguments.
+      def tf_func(x, y):
+        return getattr(tf.raw_ops, op_name)(sorted_inputs=x, values=y)
+    self._test_convert(tf_func, inputs)
+
 
 if __name__ == "__main__":
   tf.test.main()

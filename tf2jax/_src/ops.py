@@ -2808,3 +2808,34 @@ def _xla_select_and_scatter(proto):
   select = proto.attr["select"].func.name
 
   return _XlaSelectAndScatter(dict(scatter=scatter, select=select))
+
+
+def _searchsorted(a: jnp.ndarray, v: jnp.ndarray, side: str):
+  """Vmapped version of searchsorted to implement LowerBound and UpperBound."""
+  return jax.vmap(
+      functools.partial(jnp.searchsorted, side=side),
+      in_axes=0,
+      out_axes=0,
+  )(a, v)
+
+
+def _lower_upper_bound(proto, side: str):
+  """Parse a LowerBound or UpperBound op using searchsorted."""
+  _check_attrs(proto, {"T", "Tvalues", "out_type"})
+  dtype = tf.as_dtype(proto.attr["out_type"].type)
+  if dtype != tf.int32:
+    raise ValueError(
+        f"Return type {dtype} not supported for LowerBound and UpperBound.")
+  return lambda a, v: _searchsorted(a, v, side=side)
+
+
+@register_operation("LowerBound")
+def _lower_bound(proto):
+  """Parse a LowerBound op."""
+  return _lower_upper_bound(proto, side="left")
+
+
+@register_operation("UpperBound")
+def _upper_bound(proto):
+  """Parse an UpperBound op."""
+  return _lower_upper_bound(proto, side="right")
