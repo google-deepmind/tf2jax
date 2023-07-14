@@ -15,19 +15,16 @@
 """MHLO JAX primitive"."""
 
 import dataclasses
-import functools
 import threading
-from typing import Any, Dict, Tuple
+from typing import Dict, Tuple
 
-import jax
 from jax import core
 from jax.interpreters import mlir
+from jax.interpreters import xla
 from jax.lib import xla_client as xc
 
 from jaxlib.mlir import ir
 from jaxlib.mlir.dialects import mhlo
-
-import numpy as np
 
 from tf2jax.experimental import util
 
@@ -65,12 +62,6 @@ def _get_program(mhlo_text: str) -> Tuple[str, xc.XlaComputation]:
   return named_program
 
 
-@functools.lru_cache(None)
-def _get_compiled_program(mhlo_text: str, backend: Any) -> Any:
-  executable = backend.compile(mhlo_text)
-  return executable
-
-
 def mhlo_apply(*args, module: MhloModule):
   ret = mhlo_apply_p.bind(*args, module=module)
   # TODO(shaobohou) Unpack singleton result?
@@ -81,12 +72,7 @@ def mhlo_apply(*args, module: MhloModule):
 
 
 def mhlo_apply_impl(*args, module: MhloModule):
-  backend = jax.lib.xla_bridge.get_backend()
-  executable = _get_compiled_program(module.module, backend)
-  return jax.lib.xla_client.execute_with_python_values(
-      executable=executable,
-      arguments=[np.asarray(x) for x in args],
-      backend=backend)
+  return xla.apply_primitive(mhlo_apply_p, *args, module=module)
 
 mhlo_apply_p.def_impl(mhlo_apply_impl)
 
