@@ -89,7 +89,10 @@ def _refine_with_static_input_shapes(
           new_main_op.arguments, orig_main.type.inputs
       ):
         # TODO(shaobohou) Why is the ConvertOp needed?
-        orig_main_args.append(mlir.hlo.ConvertOp(orig_arg_type, new_arg).result)
+        if orig_arg_type != new_arg:
+          orig_main_args.append(
+              mlir.hlo.ConvertOp(orig_arg_type, new_arg).result
+          )
       call = mlir.func_dialect.CallOp(
           orig_output_types,
           ir.FlatSymbolRefAttr.get(orig_main_name),
@@ -99,7 +102,11 @@ def _refine_with_static_input_shapes(
   symbol_table.set_symbol_name(new_main_op, "main")
 
   # Refinement passes.
-  module = mhlo.refine_polymorphic_shapes(module)
+  input_dims = jax.tree_util.tree_flatten([x.shape for x in operands])[0]
+  module = mhlo.refine_polymorphic_shapes(
+      module,
+      validate_static_shapes=all([isinstance(x, int) for x in input_dims]),
+  )
   return mlir.module_to_string(module)
 
 

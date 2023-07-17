@@ -713,6 +713,7 @@ class Jax2TfTest(test_util.TestCase):
     w = np.array(range(20), dtype=np.float32).reshape((4, 5))
     expected_outputs = forward(x, w)
 
+    # JAX -> TF
     tf_fn = _jax2tf_convert(
         forward,
         polymorphic_shapes=["(b, _)", None],
@@ -724,11 +725,24 @@ class Jax2TfTest(test_util.TestCase):
     tf_outputs = concrete_tf_fn(x, w)
     self.assertAllClose(expected_outputs, tf_outputs)
 
+    # JAX -> TF -> JAX
     jax_fn = tf2jax.convert_functional(
         tf_fn, np.zeros_like(x), np.zeros_like(w)
     )
     jax_outputs = self.variant(jax_fn)(x, w)
     self.assertAllClose(expected_outputs, jax_outputs)
+
+    # JAX -> TF -> JAX -> TF
+    tf_fn2 = _jax2tf_convert(
+        jax_fn,
+        polymorphic_shapes=["(b, _)", None],
+        with_gradient=with_grad,
+        enable_xla=enable_xla)
+    tf_fn2 = tf.function(tf_fn2, autograph=False)
+    concrete_tf_fn2 = tf_fn2.get_concrete_function(
+        tf.TensorSpec(shape=(None, 4)), tf.TensorSpec(shape=(4, 5)))
+    tf_outputs2 = concrete_tf_fn2(x, w)
+    self.assertAllClose(expected_outputs, tf_outputs2)
 
   @chex.variants(with_jit=True)
   @parameterized.named_parameters(
@@ -751,6 +765,7 @@ class Jax2TfTest(test_util.TestCase):
     y = np.array(range(24), dtype=np.float32).reshape((2, 3, 4))
     expected_outputs = forward(x, y)
 
+    # JAX -> TF
     tf_fn = _jax2tf_convert(
         forward,
         polymorphic_shapes=["(b, _)", "(_, b, _)"],
@@ -762,11 +777,24 @@ class Jax2TfTest(test_util.TestCase):
     tf_outputs = concrete_tf_fn(x, y)
     self.assertAllClose(expected_outputs, tf_outputs)
 
+    # JAX -> TF -> JAX
     jax_fn = tf2jax.convert_functional(
         tf_fn, np.zeros_like(x), np.zeros_like(y)
     )
     jax_outputs = self.variant(jax_fn)(x, y)
     self.assertAllClose(expected_outputs, jax_outputs)
+
+    # JAX -> TF -> JAX -> TF
+    tf_fn2 = _jax2tf_convert(
+        jax_fn,
+        polymorphic_shapes=["(b, _)", "(_, b, _)"],
+        with_gradient=with_grad,
+        enable_xla=enable_xla)
+    tf_fn2 = tf.function(tf_fn2, autograph=False)
+    concrete_tf_fn2 = tf_fn2.get_concrete_function(
+        tf.TensorSpec(shape=(None, 4)), tf.TensorSpec(shape=(2, None, 4)))
+    tf_outputs2 = concrete_tf_fn2(x, y)
+    self.assertAllClose(expected_outputs, tf_outputs2)
 
   @chex.variants(with_jit=True)
   @parameterized.named_parameters(
