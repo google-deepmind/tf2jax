@@ -22,6 +22,7 @@ from jax import core
 from jax.interpreters import mlir
 from jax.interpreters import xla
 from jax.lib import xla_client as xc
+import jax.numpy as jnp
 
 from jaxlib.mlir import ir
 from jaxlib.mlir.dialects import mhlo
@@ -77,15 +78,81 @@ def mhlo_apply_impl(*args, module: MhloModule):
 mhlo_apply_p.def_impl(mhlo_apply_impl)
 
 
-def mhlo_apply_abstract_eval(*args, module: MhloModule):
-  del args
-  _, program = _get_program(module.module)
-  result_spec = program.program_shape().result_shape()
-  assert result_spec.is_tuple()
-  return tuple([
-      core.ShapedArray(spec.dimensions(), spec.element_type())
-      for spec in result_spec.tuple_shapes()
-  ])
+# See https://github.com/google/jax/blob/main/jax/_src/interpreters/mlir.py#L115
+# for reference
+def _ir_type_to_dtype(ir_type: ir.Type) -> jnp.dtype:
+  """Converts MLIR type to JAX dtype."""
+  ir_to_jax = {
+      ir.IntegerType.get_signless(8): jnp.int8,
+      ir.IntegerType.get_signless(16): jnp.int16,
+      ir.IntegerType.get_signless(32): jnp.int32,
+      ir.IntegerType.get_signless(64): jnp.int64,
+      ir.IntegerType.get_unsigned(8): jnp.uint8,
+      ir.IntegerType.get_unsigned(16): jnp.uint16,
+      ir.IntegerType.get_unsigned(32): jnp.uint32,
+      ir.IntegerType.get_unsigned(64): jnp.uint64,
+      ir.F16Type.get(): jnp.float16,
+      ir.F32Type.get(): jnp.float32,
+      ir.F64Type.get(): jnp.float64,
+      ir.BF16Type.get(): jnp.bfloat16,
+      ir.ComplexType.get(ir.F32Type.get()): jnp.complex64,
+      ir.ComplexType.get(ir.F64Type.get()): jnp.complex128,
+      ir.Float8E4M3B11FNUZType.get(): jnp.float8_e4m3b11fnuz,
+      ir.Float8E4M3FNType.get(): jnp.float8_e4m3fn,
+      ir.Float8E5M2Type.get(): jnp.float8_e5m2,
+  }
+  return ir_to_jax[ir_type]
+
+
+_UKNOWN_DIM_PREFIX = "tf2jax_unknown_dim"
+
+
+def mhlo_apply_abstract_eval(
+    *in_avals: core.ShapedArray, module: MhloModule
+) -> Tuple[core.ShapedArray, ...]:
+  """Abstract evaluation rule."""
+  with mlir.make_ir_context():
+    mhlo_module = ir.Module.parse(module.module)
+    symtab = ir.SymbolTable(mhlo_module.operation)
+
+    # Check we are not reusing existing dimension vars.
+    has_polymorphic = False
+    for val in in_avals:
+      for dim in val.shape:
+        if not isinstance(dim, int):
+          has_polymorphic = True
+          if any(x.startswith(_UKNOWN_DIM_PREFIX) for x in dim.get_vars()):
+            raise ValueError(
+                "Polymorphic variable name that start with"
+                f" `{_UKNOWN_DIM_PREFIX}` are reserved for use by tf2jax"
+                f" internal for outputs: `{val.shape}`"
+            )
+
+    # Map each `dynamic`` dimension to a unique dimension variable because we
+    # do not have the information from the avals of the original JAX function.
+    # In practice, the output shapes may actually be much more constrained, but
+    # the information is not available here.
+    dynamic_count = 0
+    output_specs = []
+    for res in symtab["main"].type.results:
+      if any(dim == res.get_dynamic_size() for dim in res.shape):
+        out_shape = ", ".join(
+            f"{_UKNOWN_DIM_PREFIX}_{(dynamic_count := dynamic_count + 1)}"
+            if dim == res.get_dynamic_size()
+            else str(dim)
+            for dim in res.shape
+        )
+
+        assert has_polymorphic, has_polymorphic
+        from jax.experimental.jax2tf import shape_poly  # pylint: disable=g-import-not-at-top  # pytype: disable=import-error
+        out_shape = shape_poly._parse_spec(out_shape, res.shape)  # pylint: disable=protected-access
+      else:
+        out_shape = res.shape
+      output_specs.append(
+          core.ShapedArray(out_shape, _ir_type_to_dtype(res.element_type))
+      )
+    return tuple(output_specs)
+
 
 mhlo_apply_p.def_abstract_eval(mhlo_apply_abstract_eval)
 
