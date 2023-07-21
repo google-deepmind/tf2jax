@@ -274,11 +274,17 @@ def _any(proto):
 
 @register_operation("Assert")
 def _assert(proto):
+  """Parse an Assert Op."""
   _check_attrs(proto, {"T", "summarize"})
 
   logging.warning("Assert has no effect.")
 
-  return lambda cond, *data: _EMPTY_RETURN_VALUE
+  def _func(cond, *data):
+    del cond, data
+    # TODO(shaobohou) Use checkify?
+    return _EMPTY_RETURN_VALUE
+
+  return _func
 
 
 @register_operation("AvgPool")

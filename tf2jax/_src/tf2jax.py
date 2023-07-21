@@ -15,6 +15,7 @@
 """Experimental functions for converting TF graphs to Jax functions."""
 
 import collections
+import functools
 import inspect
 import itertools
 import json
@@ -702,13 +703,45 @@ class _Subgraph(NamedTuple):
         node.control_inputs = new_control_inputs
         new_nodes.append(node)
 
-    assert len(processed) == len(subgraph)
+    assert len(processed) == len(subgraph), (len(processed), len(subgraph))
     return tuple(new_nodes)
 
 
 def _contains_custom_gradient(node: tf.compat.v1.NodeDef) -> bool:
   # IdentityN are used to override gradients.
   return node.op == "IdentityN"
+
+
+def _get_consumers_and_producers_fns(nodes):
+  """Returns functions to get consumers and producers for a node."""
+  op_map = {n.name: (idx, n) for idx, n in enumerate(nodes)}
+
+  # Maps node name to immediate consumers.
+  consumers_map = {n.name: [] for n in nodes}
+  for node in nodes:
+    for inp in node.inputs:
+      consumers_map[inp.op_name].append(node.name)
+
+  # Get all consumers for a node.
+  @functools.lru_cache(None)
+  def get_consumers(node_name: str) -> list[str]:
+    if not consumers_map[node_name]:
+      return [node_name]
+    else:
+      return sum([get_consumers(n) for n in consumers_map[node_name]], [])
+
+  # Get all producers for a node.
+  @functools.lru_cache(None)
+  def get_producers(node_name: str):
+    _, node = op_map[node_name]
+    if node.inputs:
+      return set.union(
+          set([node_name]), *[get_producers(x.op_name) for x in node.inputs]
+      )
+    else:
+      return set([node_name])
+
+  return get_consumers, get_producers
 
 
 # Extract subgraphs for custom_gradient.
@@ -719,6 +752,8 @@ def _extract_subgraphs(graphdef, nodes, library):
   if _EMPTY_RETURN_OP_NAME in op_map:
     logging.info("Skip subgraph extraction for function with no return values.")
     return {}
+
+  get_consumers, get_producers = _get_consumers_and_producers_fns(nodes)
 
   subgraphs = {}
   for node in graphdef.node:
@@ -762,6 +797,28 @@ def _extract_subgraphs(graphdef, nodes, library):
           internal_captures.append(inp)
         else:
           external_captures.append(inp)
+
+      # Find side-effects, i.e. nodes that depends on the subgraph but do not
+      # feed into the subgraph outputs, e.g. shape check asserts from jax2tf.
+      side_effects = []
+      subgraph_and_output = subgraph | set([output_node.name])
+      for node in nodes:
+        if node.name not in subgraph_and_output:
+          if any(inp.op_name in subgraph for inp in node.inputs):
+            side_effects.append(set(get_consumers(node.name)))
+      # Gather all dependencies of side-effects, assume they are not depended on
+      # by other nodes outside of the subgraph + side-effects. This may only
+      # work for shape check assert added by jax2tf.
+      side_effects = set.union(set(), *side_effects)
+      side_effect_deps = set()
+      for x in set.union(set(), *[get_producers(x) for x in side_effects]):
+        if op_map[x][1].op != "Placeholder":
+          side_effect_deps.add(x)
+      # Merge side-effects and dependencies into the subgraph.
+      subgraph = subgraph | side_effects | side_effect_deps
+      output_node.control_inputs = output_node.control_inputs + tuple(
+          _TensorEdge(op_name=x, is_control=True) for x in side_effects
+      )
 
       excluded = inputs + unused_captures + external_captures
       subgraph = subgraph.difference(set([x.op_name for x in excluded]))
