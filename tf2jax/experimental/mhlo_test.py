@@ -142,6 +142,35 @@ class MhloTest(chex.TestCase):
     self._assert_all_close(expect_top_fn, actual_top_fn, inputs)
     _check_transforms(actual_top_fn, inputs, dialect=dialect)
 
+  @chex.variants(with_jit=True, without_jit=True)
+  @parameterized.named_parameters(
+      ("mhlo", "mhlo"),
+      ("stablehlo", "stablehlo"),
+  )
+  def test_boolean(self, dialect):
+    @jax.jit
+    def fn(x):
+      return x > 0
+
+    inputs = (
+        np.ones((4,), dtype=np.int32) * 10,
+    )
+    mhlo_text = _convert_to_mhlo(
+        fn, jax.tree_map(np.zeros_like, inputs), dialect=dialect)
+    mhlo_module = mhlo.MhloModule(module=mhlo_text, fun_name="test_module")
+    chex.assert_trees_all_close(
+        mhlo.mhlo_apply(*inputs, module=mhlo_module), fn(*inputs))
+
+    def make_top_fn(sub_fn):
+      def top_fn(x):
+        return sub_fn(x) * x
+      return top_fn
+
+    expect_top_fn = make_top_fn(fn)
+    actual_top_fn = make_top_fn(
+        functools.partial(mhlo.mhlo_apply, module=mhlo_module))
+    self._assert_all_close(expect_top_fn, actual_top_fn, inputs)
+
 
 if __name__ == "__main__":
   absltest.main()

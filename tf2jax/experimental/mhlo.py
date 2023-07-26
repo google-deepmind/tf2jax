@@ -62,6 +62,7 @@ mhlo_apply_p.def_impl(mhlo_apply_impl)
 def _ir_type_to_dtype(ir_type: ir.Type) -> jnp.dtype:
   """Converts MLIR type to JAX dtype."""
   ir_to_jax = {
+      ir.IntegerType.get_signless(1): jnp.bool_,
       ir.IntegerType.get_signless(8): jnp.int8,
       ir.IntegerType.get_signless(16): jnp.int16,
       ir.IntegerType.get_signless(32): jnp.int32,
