@@ -684,6 +684,31 @@ def _cumsum(proto):
   return _func
 
 
+@register_operation("Cumprod")
+def _cumprod(proto):
+  """Parse a Cumprod Op."""
+  _check_attrs(proto, {"T", "Tidx", "exclusive", "reverse"})
+
+  exclusive = proto.attr["exclusive"].b
+  reverse = proto.attr["reverse"].b
+
+  def _func(x: jnp.ndarray, axis: jnp.ndarray) -> jnp.ndarray:
+    axis = axis.item()
+    if reverse:
+      x = anp.flip(x, axis=axis)
+    if exclusive:
+      pad_shape = list(x.shape)
+      pad_shape[axis] = 1
+      x = anp.concatenate([np.ones(pad_shape, dtype=x.dtype), x], axis=axis)
+      x = x[(slice(None),) * axis + (slice(0, -1), Ellipsis)]
+    res = anp.cumprod(x, axis=axis)
+    if reverse:
+      res = anp.flip(res, axis=axis)
+    return res
+
+  return _func
+
+
 @register_operation("DepthwiseConv2dNative")
 def _depthwise_conv2d(proto):
   """Parse a DepthwiseConv2d Op."""

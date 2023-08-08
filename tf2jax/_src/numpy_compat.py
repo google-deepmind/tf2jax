@@ -193,6 +193,10 @@ def cumsum(arr, axis: int):
   return _get_np(arr).cumsum(arr, axis=axis)
 
 
+def cumprod(arr, axis: int):
+  return _get_np(arr).cumprod(arr, axis=axis)
+
+
 def max_(arr, axis: Union[int, Sequence[int]], keepdims: bool):
   axis = tuple(axis) if isinstance(axis, (list, tuple)) else (axis,)
   return _get_np(arr).max(arr, axis=axis, keepdims=keepdims)

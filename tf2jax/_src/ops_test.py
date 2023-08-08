@@ -697,11 +697,44 @@ class OpsTest(test_util.TestCase):
   @chex.variants(with_jit=True, without_jit=True)
   @parameterized.named_parameters(
       chex.params_product(
-          (("without_explicit_paddings", False),
-           ("with_explicit_paddings", True)),
-          (("NHWC", "NHWC"), ("NCHW", "NCHW"),),
+          (
+              ("exclusive", True),
+              ("not_exclusive", False),
+          ),
+          (("reverse", True), ("forward", False)),
           named=True,
-      ))
+      )
+  )
+  def test_cumprod(self, exclusive, reverse):
+    inputs = np.array(np.reshape(range(24), (4, 3, 2)), dtype=np.int32)
+
+    def cumprod_fn(xs):
+      return tf.raw_ops.Cumprod(
+          x=xs, axis=1, exclusive=exclusive, reverse=reverse
+      )
+
+    self._test_convert(cumprod_fn, inputs)
+
+    # Check static inputs result in static outputs.
+    def cumprod_static():
+      return tf.zeros(cumprod_fn(inputs)[0, -1])
+
+    self._test_convert(cumprod_static, [])
+
+  @chex.variants(with_jit=True, without_jit=True)
+  @parameterized.named_parameters(
+      chex.params_product(
+          (
+              ("without_explicit_paddings", False),
+              ("with_explicit_paddings", True),
+          ),
+          (
+              ("NHWC", "NHWC"),
+              ("NCHW", "NCHW"),
+          ),
+          named=True,
+      )
+  )
   def test_depthwise_conv2d(self, use_explicit_paddings, data_format):
     np.random.seed(42)
 
