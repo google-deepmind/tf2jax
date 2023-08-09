@@ -227,10 +227,20 @@ expand_dims = lambda arr, axis: _get_np(arr).expand_dims(arr, axis=axis)
 flip = lambda arr, axis: _get_np(arr).flip(arr, axis=axis)
 roll = lambda arr, shift, axis: _get_np(arr).roll(arr, shift=shift, axis=axis)
 split = lambda arr, sections, axis: _get_np(arr).split(arr, sections, axis=axis)
-squeeze = lambda arr, axis: _get_np(arr).squeeze(arr, axis=axis)
 stack = lambda arrs, axis: _get_np(*arrs).stack(arrs, axis=axis)
 tile = lambda arr, reps: _get_np(arr, reps).tile(arr, reps=reps)
 where = lambda cond, x, y: _get_np(cond, x, y).where(cond, x, y)
+
+
+def squeeze(arr, axis):
+  # tf.squeeze and np/jnp.squeeze have different behaviors when axis=().
+  # - tf.squeeze will squeeze all dimensions.
+  # - np/jnp.squeeze will not squeeze any dimensions.
+  # Here we change () to None to ensure that squeeze has the same behavior
+  # when converted from tf to np/jnp.
+  if axis == tuple():
+    axis = None
+  return _get_np(arr).squeeze(arr, axis=axis)
 
 
 def moveaxis(
