@@ -1458,8 +1458,9 @@ class OpsTest(test_util.TestCase):
     self._test_convert(roll_static, [])
 
   @chex.variants(with_jit=True, without_jit=True)
-  def test_squeeze(self):
-    inputs, dims = np.array([[[42], [47]]]), (0, 2)
+  @parameterized.parameters(((0, 2),), (tuple(),), (None,))
+  def test_squeeze(self, dims):
+    inputs = np.array([[[42], [47]]])
 
     def squeeze(x):
       return tf.raw_ops.Squeeze(input=x, axis=dims)
