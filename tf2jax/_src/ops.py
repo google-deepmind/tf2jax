@@ -1189,7 +1189,7 @@ def _matrix_diag(proto):
 
   def _func(
       diagonals: jnp.ndarray,
-      k: jnp.ndarray,
+      k: int,
       num_rows: jnp.ndarray,
       num_cols: jnp.ndarray,
       padding_value: jnp.ndarray,
@@ -1408,7 +1408,7 @@ def _pad_v2(proto):
 
   def _func(
       inputs: jnp.ndarray,
-      padding: jnp.ndarray,
+      padding: Union[Sequence[Sequence[int]], Sequence[int], int],
       constant_values: jnp.ndarray,
   ) -> jnp.ndarray:
     return jnp.pad(inputs, pad_width=padding, constant_values=constant_values)
@@ -1907,8 +1907,8 @@ def _stateless_random_uniform_int_v2(proto):
       key: jnp.ndarray,
       counter: jnp.ndarray,
       alg: jnp.ndarray,
-      minval: jnp.ndarray = jnp.iinfo(jax_dtype).min,
-      maxval: jnp.ndarray = jnp.iinfo(jax_dtype).max,
+      minval: Union[jnp.ndarray, int] = jnp.iinfo(jax_dtype).min,
+      maxval: Union[jnp.ndarray, int] = jnp.iinfo(jax_dtype).max,
   ) -> jnp.ndarray:
     del counter, alg  # TODO(b/266553394) combine key and counter?
     return jax.random.randint(
