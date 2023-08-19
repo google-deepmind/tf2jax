@@ -2266,7 +2266,8 @@ def _unpack(proto):
 @register_operation("VarHandleOp")
 def _var_handle(proto):
   _check_attrs(
-      proto, {"shared_name", "container", "allowed_devices", "shape", "dtype"})
+      proto, {"shared_name", "container", "allowed_devices", "shape", "dtype",
+              "debug_name"})
 
   def _func():
     raise ValueError(f"VarHandleOp `{proto.name}` cannot be evaluated.")
