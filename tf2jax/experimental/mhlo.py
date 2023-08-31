@@ -158,6 +158,7 @@ def refine_polymorphic_shapes(
   if xc.mlir_api_version >= 53:
     refined_module_str = xc._xla.mlir.refine_polymorphic_shapes(  # pylint: disable=protected-access
         mlir.module_to_bytecode(module),
+        enable_shape_assertions=validate_static_shapes,
         validate_static_shapes=validate_static_shapes,
     )
   elif xc.mlir_api_version >= 50:
