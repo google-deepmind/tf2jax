@@ -15,10 +15,12 @@
 """Utililties for wrapping around numpy and jax.numpy."""
 
 import itertools
+import operator
 
 from typing import Sequence, Union
 
 import jax
+from jax.lib import xla_client as xc
 import jax.numpy as jnp
 import numpy as np
 import tensorflow as tf
@@ -65,15 +67,22 @@ tf_to_jnp_dtypes = {
 _NP_LIKES = (np.ndarray, np.number, np.bool_, bool, int, float, complex)
 
 
-# We avoids importing jax2tf.shape_poly.is_poly_dim as jax2tf often depends
+# We avoid importing jax2tf.shape_poly.is_poly_dim as jax2tf often depends
 # on the most recent tensorflow version.
 # This should reflect is_poly_dim() at
 # https://github.com/google/jax/blob/main/jax/experimental/jax2tf/shape_poly.py#L676
-def is_poly_dim(x):
-  cls = type(x)
-  return (cls.__module__ == "jax.experimental.jax2tf.shape_poly" and
-          # _DimPolynomial is for backward compatibility.
-          cls.__name__ in ("_DimExpr", "_DimPolynomial"))
+def is_poly_dim(x) -> bool:
+  # Array types.
+  if isinstance(x, (np.ndarray, jax.core.Tracer, xc.ArrayImpl)):
+    return False
+
+  try:
+    # Integer types.
+    operator.index(x)
+  except TypeError:
+    return True
+  else:
+    return False
 
 
 def _get_np(*args):
