@@ -744,6 +744,13 @@ class Jax2TfTest(test_util.TestCase):
     tf_outputs2 = concrete_tf_fn2(x, w)
     self.assertAllClose(expected_outputs, tf_outputs2)
 
+    # JAX -> TF -> JAX -> TF -> SavedModel
+    module = tf.Module()
+    module.fn = tf_fn2
+    tmp_dir = self.create_tempdir()
+    options = tf.saved_model.SaveOptions(experimental_custom_gradients=True)
+    tf.saved_model.save(module, tmp_dir.full_path, options=options)
+
   @chex.variants(with_jit=True)
   @parameterized.named_parameters(
       chex.params_product(
@@ -795,6 +802,13 @@ class Jax2TfTest(test_util.TestCase):
         tf.TensorSpec(shape=(None, 4)), tf.TensorSpec(shape=(2, None, 4)))
     tf_outputs2 = concrete_tf_fn2(x, y)
     self.assertAllClose(expected_outputs, tf_outputs2)
+
+    # JAX -> TF -> JAX -> TF -> SavedModel
+    module = tf.Module()
+    module.fn = tf_fn2
+    tmp_dir = self.create_tempdir()
+    options = tf.saved_model.SaveOptions(experimental_custom_gradients=True)
+    tf.saved_model.save(module, tmp_dir.full_path, options=options)
 
   @chex.variants(with_jit=True)
   @parameterized.named_parameters(

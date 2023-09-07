@@ -96,23 +96,24 @@ def mhlo_apply_abstract_eval(
     symtab = ir.SymbolTable(mhlo_module.operation)
 
     # Check we are not reusing existing dimension vars.
+    dynamic_count = 0
     has_polymorphic = False
     for val in in_avals:
       for dim in val.shape:
         if not isinstance(dim, int):
           has_polymorphic = True
           if any(x.startswith(_UKNOWN_DIM_PREFIX) for x in dim.get_vars()):
-            raise ValueError(
-                "Polymorphic variable name that start with"
-                f" `{_UKNOWN_DIM_PREFIX}` are reserved for use by tf2jax"
-                f" internal for outputs: `{val.shape}`"
-            )
+            for dim in dim.get_vars():
+              if dim.startswith(_UKNOWN_DIM_PREFIX):
+                dynamic_count = max(
+                    dynamic_count,
+                    (int(dim.removeprefix(_UKNOWN_DIM_PREFIX + "_"))),
+                )
 
     # Map each `dynamic`` dimension to a unique dimension variable because we
     # do not have the information from the avals of the original JAX function.
     # In practice, the output shapes may actually be much more constrained, but
     # the information is not available here.
-    dynamic_count = 0
     output_specs = []
     for res in symtab["main"].type.results:
       if any(dim == res.get_dynamic_size() for dim in res.shape):
