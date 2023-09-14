@@ -1,6 +1,6 @@
 # TF2JAX
 
-![CI status](https://github.com/deepmind/tf2jax/workflows/ci/badge.svg)
+![CI status](https://github.com/google-deepmind/tf2jax/workflows/ci/badge.svg)
 ![pypi](https://img.shields.io/pypi/v/tf2jax)
 
 TF2JAX is an experimental library for converting [TensorFlow] functions/graphs
@@ -38,7 +38,7 @@ pip install tf2jax
 or you can install the latest development version from GitHub:
 
 ```sh
-pip install git+https://github.com/deepmind/tf2jax.git
+pip install git+https://github.com/google-deepmind/tf2jax.git
 ```
 
 ## Motivations
@@ -398,7 +398,7 @@ We are happy to receive pull requests that improve our coverage of TensorFlow
 ops.
 
 [DeepMind JAX Ecosystem]: https://deepmind.com/blog/article/using-jax-to-accelerate-our-research "DeepMind JAX Ecosystem"
-[DeepMind JAX Ecosystem citation]: https://github.com/deepmind/jax/blob/main/deepmind2020jax.txt "Citation"
+[DeepMind JAX Ecosystem citation]: https://github.com/google-deepmind/jax/blob/main/deepmind2020jax.txt "Citation"
 [JAX]: https://github.com/google/jax "JAX on GitHub"
 [TensorFlow]: https://github.com/tensorflow/tensorflow "TensorFlow on GitHub"
 [jax2tf documentation]: https://github.com/google/jax/blob/master/jax/experimental/jax2tf/README.md#calling-tensorflow-functions-from-jax "jax2tf documentation"
