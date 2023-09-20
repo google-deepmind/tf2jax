@@ -1,5 +1,5 @@
 chex==0.1.8
 dm-haiku==0.0.10
 dm-sonnet==2.0.1
-tensorflow==2.11.0; sys_platform != 'darwin' or platform_machine != 'arm64'
-tensorflow-macos==2.11.0; sys_platform == 'darwin' and platform_machine == 'arm64'
+tensorflow==2.13.0; sys_platform != 'darwin' or platform_machine != 'arm64'
+tensorflow-macos==2.13.0; sys_platform == 'darwin' and platform_machine == 'arm64'

@@ -25,8 +25,7 @@ python --version
 
 # Install dependencies.
 pip install --upgrade pip setuptools wheel
-# See https://github.com/google/pytype/issues/1316
-pip install flake8 pytest-xdist pytype==2022.9.19 importlab==0.7 pylint pylint-exit
+pip install flake8 pytest-xdist pytype pylint pylint-exit
 pip install -r requirements.txt
 pip install -r requirements_tests.txt
 
