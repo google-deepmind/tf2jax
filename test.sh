@@ -48,7 +48,8 @@ pip install tf2jax*.whl
 
 # Check types with pytype.
 # Also see https://github.com/google/pytype/issues/1169
-pytype `find tf2jax/_src/ -name "*py" | xargs` -k --use-enum-overlay
+# TODO(shaobohou) Reenable this after tensorflow 2.14.0 is released.
+# pytype `find tf2jax/_src/ -name "*py" | xargs` -k --use-enum-overlay
 
 # Run tests using pytest.
 # Change directory to avoid importing the package from repo root.
