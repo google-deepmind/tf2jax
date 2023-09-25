@@ -15,8 +15,9 @@
 """TF2JAX configurations."""
 
 import contextlib
+import copy
 
-from typing import Any, Union
+from typing import Any, Mapping, Union
 
 _config = dict(
     strict_shape_check=True,
@@ -57,3 +58,19 @@ def override_config(name: str, value: Any):
     yield
   finally:
     update_config(name, old_value)
+
+
+def copy_config() -> Mapping[str, Any]:
+  return copy.deepcopy(_config)
+
+
+@contextlib.contextmanager
+def override_configs(new_config: Mapping[str, Any]):
+  old_config = copy_config()
+  for name, value in new_config.items():
+    update_config(name, value)
+  try:
+    yield
+  finally:
+    for name, value in old_config.items():
+      update_config(name, value)

@@ -15,11 +15,12 @@
 """Experimental functions for converting TF graphs to Jax functions."""
 
 import collections
+import contextlib
 import functools
 import inspect
 import itertools
 import json
-from typing import Any, Callable, Iterable, Iterator, Optional, Mapping, NamedTuple, Sequence, Tuple, Union
+from typing import Any, Callable, Dict, Iterable, Iterator, Mapping, NamedTuple, Optional, Sequence, Tuple, Union
 
 from absl import logging
 
@@ -164,12 +165,31 @@ _TF_ASSIGN_OPS = (
 _TF_RANDOM_OPS = ("RandomStandardNormal", "RandomUniform", "RandomUniformInt")
 
 
+class _CachedBuilder:
+  """Cached function builder."""
+
+  def __init__(
+      self,
+      builder_fn: Callable[
+          [], Tuple[Callable[..., Any], Optional[Mapping[str, ArrayLike]]]
+      ],
+      cached_configs: Mapping[str, Any],
+  ):
+    self._builder_fn = functools.lru_cache(builder_fn)
+    self._cached_configs = cached_configs
+
+  def __call__(
+      self,
+  ) -> Tuple[Callable[..., Any], Optional[Mapping[str, ArrayLike]]]:
+    with config.override_configs(self._cached_configs):  # pytype: disable=attribute-error
+      return self._builder_fn()  # pytype: disable=attribute-error
+
+
 class _LibraryFunction(NamedTuple):
   """A library function."""
-  fn: Callable[..., Any]
+  fn_builder: _CachedBuilder
   require_rng: bool
   # Optional fields (mainly) used by gradient functions.
-  params: Optional[Mapping[str, ArrayLike]] = None
   input_specs: Optional[Tuple[tf.TensorSpec, ...]] = None
   output_specs: Optional[Tuple[tf.TensorSpec, ...]] = None
   # If fn is a gradient function, this is the output specs for the original fn.
@@ -178,6 +198,16 @@ class _LibraryFunction(NamedTuple):
   output_is_input: Optional[Tuple[bool]] = None
   # Inputs corresponding to VarHandleOp
   variable_input_specs: Optional[Tuple[tf.TensorSpec, ...]] = None
+
+  @property
+  def fn(self) -> Callable[..., Any]:
+    fn, _ = self.fn_builder()
+    return fn
+
+  @property
+  def params(self) -> Optional[Mapping[str, ArrayLike]]:
+    _, params = self.fn_builder()
+    return params
 
   def __call__(self, *args, **kwargs):
     if self.params:
@@ -209,7 +239,7 @@ def _unbox_named_args(
 class _OpNode:
   """Represents an Op."""
 
-  def __init__(self, proto, library: Mapping[str, _LibraryFunction],
+  def __init__(self, proto, library: Dict[str, _LibraryFunction],
                node_map: Mapping[str, Any]):
     self.jax_func = ops.get_parser(proto.op)(proto)
     self.op = proto.op
@@ -517,10 +547,9 @@ def convert(
     signature = inspect.Signature(parameters=parameters)
 
   # Extract custom_gradient functions from the registry.
+  library = {}
   if config.get_config("convert_custom_gradient"):
-    library = _convert_all_gradient_functions(graph, {})
-  else:
-    library = {}
+    _convert_all_gradient_functions(graph, library)
 
   jax_func, jax_params = _convert(
       graphdef,
@@ -948,7 +977,7 @@ def _convert(
     captured_input_names: Optional[Tuple[str, ...]] = None,
     variable_map: Optional[Mapping[str, tf.Variable]] = None,
     constants: Optional[Mapping[str, jnp.ndarray]] = None,
-    library: Optional[Mapping[str, _LibraryFunction]] = None,
+    library: Optional[Dict[str, _LibraryFunction]] = None,
 ) -> Tuple[Callable[..., Any], Mapping[str, Variable]]:
   """Convert a GraphDef to a Jax function.
 
@@ -1238,8 +1267,7 @@ def _convert(
 
 
 def _convert_library_function(
-    proto,
-    library: Optional[Mapping[str, _LibraryFunction]],
+    proto, library: Optional[Dict[str, _LibraryFunction]]
 ) -> _LibraryFunction:
   """Convert a FunctionDef."""
   input_nodes = []
@@ -1297,16 +1325,6 @@ def _convert_library_function(
   var_inputs = tuple(node_to_spec(v) for v in var_handle_ops)
   structured_inputs = structured_inputs + var_inputs
 
-  jax_func, jax_params = _convert(
-      graphdef,
-      signature,
-      [structured_inputs, {}],
-      structured_outputs,
-      library=library)
-  if jax_params:
-    raise ValueError(
-        f"Library function should be stateless, found variables {jax_params}")
-
   # Does any of the ops or inner functions require RNG?
   require_rng = any([n.op in _TF_RANDOM_OPS for n in proto.node_def])
   for node in proto.node_def:
@@ -1314,10 +1332,22 @@ def _convert_library_function(
       if attr.func.name:
         require_rng = require_rng or library[attr.func.name].require_rng
 
+  def builder():
+    jax_func, jax_params = _convert(
+        graphdef,
+        signature,
+        [structured_inputs, {}],
+        structured_outputs,
+        library=library,
+    )
+    if jax_params:
+      raise ValueError(
+          f"Library function should be stateless, found variables {jax_params}")
+    return jax_func, jax_params
+
   return _LibraryFunction(
-      fn=jax_func,
+      fn_builder=_CachedBuilder(builder, config.copy_config()),
       require_rng=require_rng,
-      params=None,
       input_specs=structured_inputs,
       output_specs=structured_outputs,
       output_is_input=output_is_input,
@@ -1344,37 +1374,57 @@ def _filter_nodes(
 
 
 def _convert_all_gradient_functions(
-    graph: Any,
-    library: Mapping[str, _LibraryFunction],
-) -> Mapping[str, _LibraryFunction]:
+    graph: Any, library: Dict[str, _LibraryFunction]
+) -> None:
   """Recursively convert all custom gradients in a tf.Graph."""
-  grad_lib = {}
   for node, graph in _filter_nodes(_contains_custom_gradient, graph):
-    # Note that dict(**a, **b) will raise TypeError on dupliates, unlike {}.
-    grad_lib.update(
-        _convert_gradient_function(node, graph, dict(**library, **grad_lib)))
-  return grad_lib
+    _convert_gradient_function(node, graph, library)
 
 
 def _convert_gradient_function(
     proto: tf.compat.v1.NodeDef,
     graph: Any,
-    library: Mapping[str, _LibraryFunction],
-) -> Mapping[str, _LibraryFunction]:
+    library: Dict[str, _LibraryFunction],
+) -> None:
   """Convert a custom_gradient function."""
   op = graph.as_graph_element(proto.name)
   input_specs = tuple([tf.TensorSpec.from_tensor(v) for v in op.inputs])
   grad_fn_name = str(proto.attr["_gradient_op_type"].s, "utf-8")
   if grad_fn_name in library:
-    return {}
+    return
 
   @tf.function
   def tf_grad_fn(*grad_args, **grad_kwargs):
     fn = tf_ops.gradient_registry.lookup(grad_fn_name)
     return fn(None, *grad_args, **grad_kwargs)
 
-  concrete_tf_grad_fn = tf_grad_fn.get_concrete_function(*input_specs)
-  grad_lib = _convert_all_gradient_functions(concrete_tf_grad_fn.graph, library)
+  try:
+    # TODO(b/301726317) Use the escape hatch for call_tf as this may call
+    # jax2tf inside of JAX transformations, which is normally disallowed.
+    # pylint: disable=g-import-not-at-top
+    from jax.experimental.jax2tf import jax2tf as jax2tf_internal  # pytype: disable=import-error
+    # pylint: enable=g-import-not-at-top
+    inside_call_tf = jax2tf_internal.inside_call_tf
+
+    # TODO(b/301748972) Hack to support nesting of get_concrete_function in the
+    # presence of polymorphic inputs and graph mode serialization.
+    # pylint: disable=protected-access
+    @contextlib.contextmanager
+    def clear_shape_env():
+      prev_shape_env = jax2tf_internal._thread_local_state.shape_env
+      jax2tf_internal._thread_local_state.shape_env = ()
+      try:
+        yield
+      finally:
+        jax2tf_internal._thread_local_state.shape_env = prev_shape_env
+    # pylint: enable=protected-access
+  except ImportError:
+    inside_call_tf = contextlib.nullcontext
+    clear_shape_env = contextlib.nullcontext
+
+  # Alternatively, try running get_concrete_function in a separate thread?
+  with inside_call_tf(), clear_shape_env():
+    concrete_tf_grad_fn = tf_grad_fn.get_concrete_function(*input_specs)
 
   logging.info("Converting gradient function %s", grad_fn_name)
   grad_inputs = concrete_tf_grad_fn.inputs
@@ -1415,18 +1465,26 @@ def _convert_gradient_function(
   signature = inspect.Signature(
       (inspect.Parameter("grad_args", inspect.Parameter.VAR_POSITIONAL),))
 
-  jax_grad_fn, jax_grad_params = _convert(
-      concrete_tf_grad_fn.graph.as_graph_def(),
-      signature,
-      structured_grad_input_specs,
+  def builder():
+    _convert_all_gradient_functions(concrete_tf_grad_fn.graph, library)
+    jax_grad_fn, jax_grad_params = _convert(
+        concrete_tf_grad_fn.graph.as_graph_def(),
+        signature,
+        structured_grad_input_specs,
+        grad_output_specs,
+        captured_input_names=tuple(internal_capture_names),
+        variable_map=variable_map,
+        constants=constant_map,
+        library=library,
+    )
+    return jax_grad_fn, jax_grad_params
+
+  builder_fn = _CachedBuilder(builder, config.copy_config())
+  grad_fn = _LibraryFunction(
+      builder_fn,
+      False,
+      grad_input_specs,
       grad_output_specs,
-      captured_input_names=tuple(internal_capture_names),
-      variable_map=variable_map,
-      constants=constant_map,
-      # Note that dict(**a, **b) will raise TypeError on dupliates, unlike {}.
-      library=dict(**library, **grad_lib),
+      grad_output_specs[:num_fn_outputs],
   )
-  grad_fn = _LibraryFunction(jax_grad_fn, False, jax_grad_params,
-                             grad_input_specs, grad_output_specs,
-                             grad_output_specs[:num_fn_outputs])
-  return dict(**grad_lib, **{grad_fn_name: grad_fn})
+  library.update({grad_fn_name: grad_fn})

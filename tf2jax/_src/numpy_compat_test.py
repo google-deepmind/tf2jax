@@ -53,7 +53,9 @@ class NumpyCompatTest(parameterized.TestCase):
       self.assertEqual(x.shape[1], 4)
       return x + 3.14
 
-    tf_func = jax2tf.convert(jax_func, polymorphic_shapes=["(b, _)"])
+    tf_func = jax2tf.convert(
+        jax_func, polymorphic_shapes=["(b, _)"], native_serialization=False
+    )
     tf_forward = tf.function(tf_func, autograph=False)
     tf_forward.get_concrete_function(tf.TensorSpec(shape=(None, 4)))
 
