@@ -1183,11 +1183,13 @@ class Jax2TfTest(test_util.TestCase):
       else:  # Expected failure.
         return
 
-    if not uses_native_serialization():
+    try:
+      import tf2jax.experimental.ops as _  # pylint: disable=g-import-not-at-top,unused-import  # pytype: disable=import-error
+    except ImportError as e:
       raise ValueError(
           "Unexpected success with native serialization. Test may be "
           "misconfigured."
-      )
+      ) from e
 
     if jax.default_backend().lower() != "cpu":
       with jax.default_device(jax.devices("cpu")[0]):
