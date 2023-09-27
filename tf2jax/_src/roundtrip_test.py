@@ -870,6 +870,33 @@ class Jax2TfTest(test_util.TestCase):
     self.assertAllClose(expected_grads, re_jax_grads)
 
   @chex.variants(with_jit=True)
+  def test_custom_gradient_saved_model(self):
+    model = tf.saved_model.load(
+        os.path.join(os.path.dirname(os.path.split(__file__)[0]), "test_data/custom_gradient_cubed")
+    )
+
+    x = np.array(42.0, dtype=np.float32)
+    jax_fn = tf2jax.convert_functional(model.f, np.array(0.0, dtype=np.float32))
+    jax_fn = self.variant(jax_fn)
+    jax_y = jax_fn(x)
+    jax_dy_dx = jax.grad(jax_fn)(x)
+
+    # TODO(b/302195165) This has to happen after the convert, otherwise there
+    # is an input lookup error in the gradient function.
+    x = tf.constant(42.0, dtype=tf.float32)
+    with tf.GradientTape() as tape:
+      tape.watch(x)
+      with tf.GradientTape() as tape2:
+        tape2.watch(x)
+        tf_y = model.f(x)
+        with self.assertRaises(LookupError):
+          _ = tape2.gradient(tf_y, x)
+      tf_dy_dx = tape.gradient(tf_y, x)
+
+    self.assertAllClose(jax_y, tf_y)
+    self.assertAllClose(jax_dy_dx, tf_dy_dx)
+
+  @chex.variants(with_jit=True)
   @parameterized.named_parameters(
       chex.params_product(
           (("with_gradient", True),),

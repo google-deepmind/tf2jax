@@ -3,3 +3,4 @@ include LICENSE
 include requirements.txt
 include requirements_tests.txt
 include tf2jax/py.typed
+recursive-include tf2jax/test_data *

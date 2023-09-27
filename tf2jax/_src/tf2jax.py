@@ -790,6 +790,10 @@ def _extract_subgraphs(graphdef, nodes, library):
       grad_fn_name = str(node.attr["_gradient_op_type"].s, "utf-8")
       grad_fn = library[grad_fn_name]
 
+      # The gradient is not available (not serialized in a saved model?)
+      if grad_fn is None:
+        continue
+
       output_node = op_map[node.name][1]
       assert len(node.input) == len(output_node.inputs)
 
@@ -1384,13 +1388,21 @@ def _convert_all_gradient_functions(
 def _convert_gradient_function(
     proto: tf.compat.v1.NodeDef,
     graph: Any,
-    library: Dict[str, _LibraryFunction],
+    library: Dict[str, Optional[_LibraryFunction]],
 ) -> None:
   """Convert a custom_gradient function."""
   op = graph.as_graph_element(proto.name)
   input_specs = tuple([tf.TensorSpec.from_tensor(v) for v in op.inputs])
   grad_fn_name = str(proto.attr["_gradient_op_type"].s, "utf-8")
   if grad_fn_name in library:
+    return
+
+  # Higher order gradient functions may be referenced in JAX2TF produced models
+  # but not actually serialized.
+  try:
+    tf_ops.gradient_registry.lookup(grad_fn_name)
+  except LookupError:
+    library[grad_fn_name] = None
     return
 
   @tf.function

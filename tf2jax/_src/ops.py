@@ -1044,10 +1044,38 @@ def _gather(proto):
 class _IdentityN(_HigherOrderFunction):
   """Represents a IdentityN Op."""
 
+  name: str
   gradient_op_type: str  # For debug, custom_gradient is handled by _Subgraph.
+  with_custom_gradient: bool
 
   def __call__(self, *args):
-    return args
+    @jax.custom_gradient
+    def _raise_func(
+        *operands: jnp.ndarray,
+    ) -> Tuple[Tuple[jnp.ndarray, ...], Callable[..., Any]]:
+      def grad_fn(_):
+        raise LookupError(
+            f"Custom gradient `{self.gradient_op_type}` was expected but not"
+            f" found for the node `{self.name}` (op type: IdentityN). This"
+            " function is just a placeholder. The subgraph corresponding to"
+            " this IdentityN node should have been wrapped in"
+            " jax.custom_gradient with the actual gradient function found in"
+            " the TensorFlow gradient registry."
+        )
+      return operands, grad_fn
+
+    def _warn_func(*operands: jnp.ndarray) -> Tuple[jnp.ndarray, ...]:
+      logging.warn(
+          "Ignored custom gradient `%s` on the node `%s` (op type: IdentityN).",
+          self.gradient_op_type,
+          self.name,
+      )
+      return operands
+
+    if self.with_custom_gradient:
+      return _raise_func(*args)
+    else:
+      return _warn_func(*args)
 
 
 @register_operation("IdentityN")
@@ -1059,7 +1087,13 @@ def _identity_n(proto):
   if gradient_op_type:
     logging.info("Found custom gradient %s", gradient_op_type)
 
-  return _IdentityN({}, gradient_op_type=gradient_op_type)
+  return _IdentityN(
+      {},
+      name=proto.name,
+      gradient_op_type=gradient_op_type,
+      # Caching the config at conversion time.
+      with_custom_gradient=config.get_config("convert_custom_gradient"),
+  )
 
 
 class _IfOp(_HigherOrderFunction):
