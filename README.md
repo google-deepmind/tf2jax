@@ -1,6 +1,6 @@
 # TF2JAX
 
-![CI status](https://github.com/google-deepmind/tf2jax/workflows/ci/badge.svg)
+![CI status](https://img.shields.io/github/actions/workflow/status/google-deepmind/tf2jax/ci.yml?branch=main)
 ![pypi](https://img.shields.io/pypi/v/tf2jax)
 
 TF2JAX is an experimental library for converting [TensorFlow] functions/graphs
