@@ -73,7 +73,7 @@ _NP_LIKES = (np.ndarray, np.number, np.bool_, bool, int, float, complex)
 # https://github.com/google/jax/blob/main/jax/experimental/jax2tf/shape_poly.py#L676
 def is_poly_dim(x) -> bool:
   # Array types.
-  if isinstance(x, (np.ndarray, jax.core.Tracer, xc.ArrayImpl)):
+  if isinstance(x, (np.ndarray, jax.core.Tracer, xc.ArrayImpl)):  # pylint: disable=isinstance-second-argument-not-valid-type
     return False
 
   try:
