@@ -1265,7 +1265,7 @@ def _convert(
     if lost_params:
       raise ValueError(f"Some updated parameters are lost, {lost_params}.")
 
-    return collected_outputs, new_params
+    return collected_outputs, new_params  # pytype: disable=bad-return-type  # py311-upgrade
 
   return jax_func, variables
 
