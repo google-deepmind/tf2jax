@@ -1190,7 +1190,7 @@ class Jax2TfTest(test_util.TestCase):
       )
 
     if jax.default_backend().lower() != "cpu":
-      with jax.default_device(jax.devices("cpu")[0]):
+      with jax.default_device(jax.local_devices(backend="cpu")[0]):
         with self.assertRaisesRegex(ValueError, "Unsupported backend"):
           _ = jax_fn(inputs)
         with tf2jax.config.override_config(
