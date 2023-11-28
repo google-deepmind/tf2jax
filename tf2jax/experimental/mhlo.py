@@ -129,7 +129,10 @@ def mhlo_apply_abstract_eval(
           from jax.experimental.jax2tf import shape_poly  # pylint: disable=g-import-not-at-top  # pytype: disable=import-error
         else:
           from jax.experimental.export import shape_poly  # pylint: disable=g-import-not-at-top  # pytype: disable=import-error
-        out_shape = shape_poly._parse_spec(out_shape, res.shape)  # pylint: disable=protected-access
+        if jax.__version_info__ <= (0, 4, 20):
+          out_shape = shape_poly._parse_spec(out_shape, res.shape)  # pylint: disable=protected-access
+        else:
+          out_shape = shape_poly.symbolic_shape(out_shape, like=res.shape)
       else:
         out_shape = res.shape
       output_specs.append(
