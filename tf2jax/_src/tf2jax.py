@@ -1405,7 +1405,7 @@ def _convert_gradient_function(
     library[grad_fn_name] = None
     return
 
-  @tf.function
+  @tf.function(autograph=False)
   def tf_grad_fn(*grad_args, **grad_kwargs):
     fn = tf_ops.gradient_registry.lookup(grad_fn_name)
     return fn(None, *grad_args, **grad_kwargs)
