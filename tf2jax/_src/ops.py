@@ -1176,7 +1176,7 @@ def _log_softmax(proto):
 @register_operation("MatMul")
 def _matmul(proto):
   """Parse a MatMul Op."""
-  _check_attrs(proto, {"T", "transpose_a", "transpose_b", "grad_a", "grad_b"})
+  _check_attrs(proto, {"T", "transpose_a", "transpose_b"})
 
   transpose_a = proto.attr["transpose_a"].b
   transpose_b = proto.attr["transpose_b"].b
@@ -1195,7 +1195,7 @@ def _matmul(proto):
 @register_operation("BatchMatMulV2")
 def _batch_matmul(proto):
   """Parse a BatchMatMul Op."""
-  _check_attrs(proto, {"T", "adj_x", "adj_y", "grad_x", "grad_y"})
+  _check_attrs(proto, {"T", "adj_x", "adj_y"})
 
   adj_x = proto.attr["adj_x"].b
   adj_y = proto.attr["adj_y"].b
