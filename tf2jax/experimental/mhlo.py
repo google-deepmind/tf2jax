@@ -98,10 +98,15 @@ def mhlo_apply_abstract_eval(
     # Check we are not reusing existing dimension vars.
     dynamic_count = 0
     has_polymorphic = False
+    symbolic_scope = None
     for val in in_avals:
       for dim in val.shape:
         if not isinstance(dim, int):
           has_polymorphic = True
+          try:
+            symbolic_scope = symbolic_scope or dim.scope
+          except AttributeError:
+            pass
           if any(x.startswith(_UKNOWN_DIM_PREFIX) for x in dim.get_vars()):
             for dim in dim.get_vars():
               if dim.startswith(_UKNOWN_DIM_PREFIX):
@@ -136,7 +141,9 @@ def mhlo_apply_abstract_eval(
           out_shape = shape_poly.symbolic_shape(out_shape, like=res.shape)
         else:
           from jax.experimental import export  # pylint: disable=g-import-not-at-top  # pytype: disable=import-error
-          out_shape = export.symbolic_shape(out_shape, like=res.shape)
+          out_shape = export.symbolic_shape(
+              out_shape, like=res.shape, scope=symbolic_scope
+          )
       else:
         out_shape = res.shape
       output_specs.append(
