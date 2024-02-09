@@ -1,0 +1,20 @@
+[tool.poetry]
+name = "tf2jax-iso"
+version = "0.1.0"
+description = ""
+authors = ["Marco Fiscato <mfiscato@google.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.10"
+absl-py = "^2.1.0"
+dm-tree = "^0.1.8"
+jax = "^0.4.24"
+jaxlib = "^0.4.24"
+numpy = "^1.26.4"
+tf-nightly-cpu = "2.16.0.dev20240205"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

@@ -1,0 +1,15 @@
+---
+name: Tag Version
+
+# dont change these 'on' parameters, hic sunt leones
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  tag-version:
+    name: Tag Version
+    uses: isomorphiclabs/github-actions-workflows/.github/workflows/tag-version.yaml@main
+    with:
+      python-version: '3.10'

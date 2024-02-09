@@ -1,0 +1,16 @@
+name: Publish Packages
+
+# dont change these 'on' parameters, hic sunt leones
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  publish:
+    name: Publish Packages
+    uses: isomorphiclabs/github-actions-workflows/.github/workflows/publish-poetry.yaml@main
+    with:
+      repository: https://europe-python.pkg.dev/isolabs-builds/isolabs
+      python-version: '3.10'
