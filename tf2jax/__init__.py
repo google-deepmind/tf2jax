@@ -27,7 +27,7 @@ from tf2jax._src.tf2jax import convert_functional_from_restored
 
 from tf2jax._src.tf2jax import MissingInputError
 
-__version__ = "0.3.6"
+__version__ = "10.3.6"
 
 #  _________________________________________
 # / Please don't use symbols in `_src` they \
