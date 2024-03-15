@@ -129,6 +129,9 @@ def _xla_call_module(proto):
       },
   )
 
+  # TODO(b/329832868) Fix this properly.
+  assume_grad_fn = proto.name.startswith("jax2tf_vjp")
+
   version = proto.attr["version"].i
   if version < 2:
     raise ValueError(
@@ -213,7 +216,11 @@ def _xla_call_module(proto):
         mhlo_text,
         tuple(jax.core.ShapedArray(x.shape, x.dtype) for x in operands),
     )
-    mhlo_module = mhlo.MhloModule(module=refined_mhlo_text, fun_name=proto.name)
+    mhlo_module = mhlo.MhloModule(
+        module=refined_mhlo_text,
+        fun_name=proto.name,
+        assume_grad_fn=assume_grad_fn,
+    )
     return mhlo.mhlo_apply(*operands, module=mhlo_module)
 
   return _func

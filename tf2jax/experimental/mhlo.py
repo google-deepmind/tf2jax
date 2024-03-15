@@ -37,6 +37,7 @@ mhlo_apply_p.multiple_results = True
 class MhloModule:
   module: str  # string representation of the MLIR module.
   fun_name: str
+  assume_grad_fn: bool = False
 
   def __str__(self):
     return f"MhloModule(fun_name={self.fun_name}, ...)"
@@ -120,7 +121,7 @@ def mhlo_apply_abstract_eval(
     # In practice, the output shapes may actually be much more constrained, but
     # the information is not available here.
     output_specs = []
-    for res in symtab["main"].type.results:
+    for idx, res in enumerate(symtab["main"].type.results):
       if any(dim == res.get_dynamic_size() for dim in res.shape):
         out_shape = ", ".join(
             f"{_UKNOWN_DIM_PREFIX}_{(dynamic_count := dynamic_count + 1)}"
@@ -130,7 +131,10 @@ def mhlo_apply_abstract_eval(
         )
 
         assert has_polymorphic, has_polymorphic
-        if jax.__version_info__ <= (0, 4, 14):
+        if module.assume_grad_fn:
+          # TODO(b/329832868) Fix this properly.
+          out_shape = in_avals[idx].shape
+        elif jax.__version_info__ <= (0, 4, 14):
           from jax.experimental.jax2tf import shape_poly  # pylint: disable=g-import-not-at-top  # pytype: disable=import-error
           out_shape = shape_poly._parse_spec(out_shape, res.shape)  # pylint: disable=protected-access # pytype: disable=module-attr
         elif jax.__version_info__ <= (0, 4, 20):
