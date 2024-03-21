@@ -2097,10 +2097,11 @@ def _strided_slice(proto):
           end_dim = end[idx] if end_mask[idx] == 0 else None
           stride = strides[idx]
           x_dim = x.shape[dim]
-          if (stride == 1 and
-              jax.core.symbolic_equal_dim(beg_dim or 0, 0) and
-              jax.core.symbolic_equal_dim(x_dim if end_dim is None else end_dim,
-                                          x_dim)):
+          if (
+              stride == 1
+              and (beg_dim or 0) == 0
+              and (x_dim if end_dim is None else end_dim) == x_dim
+          ):
             slices.append(slice(None, None, None))
           else:
             slices.append(slice(beg_dim, end_dim, stride))
