@@ -135,7 +135,7 @@ def arange(start, stop, step, dtype: tf.DType):
 
 def asarray(arr, dtype: tf.DType):
   if is_poly_dim(arr):
-    arr = jax.core.dimension_as_value(arr)
+    arr = jnp.array(arr)
   dtype = _get_dtypes(arr)[dtype]
   return _get_np(arr).asarray(arr, dtype)
 
