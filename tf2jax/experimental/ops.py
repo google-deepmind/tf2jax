@@ -93,6 +93,8 @@ def _refine_with_static_input_shapes(
           orig_main_args.append(
               mlir.hlo.ConvertOp(orig_arg_type, new_arg).result
           )
+        else:
+          orig_main_args.append(new_arg)
       call = mlir.func_dialect.CallOp(
           orig_output_types,
           ir.FlatSymbolRefAttr.get(orig_main_name),
@@ -200,6 +202,9 @@ def _xla_call_module(proto):
             " may observe poorer performance or outright failure."
         )
         logging.warning(warn_message)
+      return None
+    else:
+      return target_platforms.index(jax_backend)
 
   if version >= 4:
     mhlo_text = xc._xla.mlir.deserialize_portable_artifact(  # pylint: disable=protected-access
@@ -211,7 +216,10 @@ def _xla_call_module(proto):
     mhlo_text = mlir.module_to_string(module)
 
   def _func(*operands: jnp.ndarray) -> Tuple[jnp.ndarray, ...]:
-    check_platforms()
+    platform_index = check_platforms()
+    if platform_index is not None and len(target_platforms) > 1:
+      operands = (jnp.array(platform_index),) + operands
+
     refined_mhlo_text = _refine_with_static_input_shapes(
         mhlo_text,
         tuple(jax.core.ShapedArray(x.shape, x.dtype) for x in operands),

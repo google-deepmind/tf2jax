@@ -1198,6 +1198,32 @@ class Jax2TfTest(test_util.TestCase):
         ):
           self.assertAllClose(jax_fn(inputs), tf_fn(inputs))
 
+  @chex.variants(with_jit=True, without_jit=True)
+  def test_platform_index(self):
+    if not uses_native_serialization():
+      self.skipTest("Skip platform_index test without native serialization.")
+
+    @jax.jit
+    def forward(x):
+      return jnp.tile(x**2, 2).reshape((2, *x.shape))
+
+    x = jnp.arange(128, dtype=jnp.int32).reshape((1, 128))
+    expected = forward(x)
+
+    func = jax2tf.convert(
+        forward,
+        native_serialization=True,
+        polymorphic_shapes=("(B, d * 128)",),
+        native_serialization_platforms=("cuda", "cpu", "tpu"),
+    )
+    tf_func = tf.function(func, autograph=False)
+
+    jax_fn = tf2jax.convert_functional(
+        tf_func, tf.TensorSpec(shape=(1, None), dtype=tf.int32)
+    )
+    actual = self.variant(jax_fn)(x)
+    self.assertAllClose(expected, actual)
+
 
 if __name__ == "__main__":
   absltest.main()
