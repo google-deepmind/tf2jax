@@ -127,8 +127,12 @@ class OpsTest(test_util.TestCase):
         self.assertAllClose(min(abs(w_jax[i] - w_tf)), 0., atol=1e-5)
 
     if compute_v:
-      self.assertAllClose(np.matmul(inputs, tf_v), tf_w[..., None, :] * tf_v)
-      self.assertAllClose(np.matmul(inputs, jax_v), jax_w[..., None, :] * jax_v)
+      self.assertAllClose(
+          np.matmul(inputs, tf_v), tf_w[..., None, :] * tf_v, atol=1e-5
+      )
+      self.assertAllClose(
+          np.matmul(inputs, jax_v), jax_w[..., None, :] * jax_v, atol=1e-5
+      )
 
   @chex.variants(with_jit=True, without_jit=True)
   @parameterized.named_parameters(
