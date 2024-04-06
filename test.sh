@@ -26,7 +26,7 @@ python --version
 # Install dependencies.
 pip install --upgrade pip setuptools wheel
 # See https://github.com/google/pytype/issues/1316
-pip install flake8 pytest-xdist pytype==2022.9.19 importlab==0.7 pylint pylint-exit
+pip install flake8 pytest-xdist pytype importlab pylint pylint-exit
 pip install -r requirements.txt
 pip install -r requirements_tests.txt
 
@@ -47,9 +47,7 @@ pip wheel --verbose --no-deps --no-clean dist/tf2jax*.tar.gz
 pip install tf2jax*.whl
 
 # Check types with pytype.
-# Also see https://github.com/google/pytype/issues/1169
-# TODO(shaobohou) Reenable this after tensorflow 2.14.0 is released.
-# pytype `find tf2jax/_src/ -name "*py" | xargs` -k --use-enum-overlay
+pytype `find tf2jax/_src/ -name "*py" | xargs` -k --use-enum-overlay
 
 # Run tests using pytest.
 # Change directory to avoid importing the package from repo root.
