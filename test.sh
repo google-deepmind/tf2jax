@@ -37,9 +37,11 @@ flake8 `find tf2jax -name '*.py' | xargs` --count --select=E9,F63,F7,F82,E225,E2
 PYLINT_ARGS="-efail -wfail"
 # Lint modules and tests separately.
 python -m pylint --rcfile=.pylintrc `find tf2jax -name '*.py' | grep -v 'test.py' | xargs` || pylint-exit $PYLINT_ARGS $?
+
 # Disable `protected-access` warnings for tests.
 # Disable `unexpected-keyword-arg` and `no-value-for-parameter` error for tests due to false positives in tensorflow.
-python -m pylint --rcfile=.pylintrc `find tf2jax -name '*_test.py' | xargs` -d W0212,E1123,E1120 || pylint-exit $PYLINT_ARGS $?
+# TODO(shaobohou) Reenable after https://github.com/pylint-dev/pylint/issues/9185 is fixed.
+# python -m pylint --rcfile=.pylintrc `find tf2jax -name '*_test.py' | xargs` -d W0212,E1123,E1120 || pylint-exit $PYLINT_ARGS $?
 
 # Build the package.
 python setup.py sdist
