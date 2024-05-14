@@ -103,7 +103,7 @@ class Jax2TfTest(test_util.TestCase):
     )
     tf_func = tf.function(tf_func, jit_compile=True, autograph=False)
     tf_outputs = tf_func(*inputs)
-    jax.tree_map(self.assertAllClose, jax_outputs, tf_outputs)
+    jax.tree.map(self.assertAllClose, jax_outputs, tf_outputs)
 
     # Jax -> TF -> Jax
     with config.override_config("convert_custom_gradient", with_custom_grad):
@@ -111,10 +111,10 @@ class Jax2TfTest(test_util.TestCase):
           tf_func, *tree.map_structure(np.zeros_like, inputs))
     rejax_func = self.variant(rejax_func)
     rejax_outputs = rejax_func(*inputs)
-    jax.tree_map(self.assertAllClose, rejax_outputs, tf_outputs)
+    jax.tree.map(self.assertAllClose, rejax_outputs, tf_outputs)
     if with_grad:
       rejax_grads = _compute_gradients(rejax_func, *inputs)
-      jax.tree_map(assert_grad_all_close, jax_grads, rejax_grads)
+      jax.tree.map(assert_grad_all_close, jax_grads, rejax_grads)
 
     # Jax -> TF -> SavedModel -> TF
     model = tf.Module()
@@ -124,7 +124,7 @@ class Jax2TfTest(test_util.TestCase):
     del model
     restored = tf.saved_model.load(tmp_dir.full_path)
     restored_tf_outputs = restored.f(*inputs)
-    jax.tree_map(self.assertAllClose, jax_outputs, restored_tf_outputs)
+    jax.tree.map(self.assertAllClose, jax_outputs, restored_tf_outputs)
 
     # Jax -> TF -> SavedModel -> TF -> Jax
     with config.override_config("convert_custom_gradient", with_custom_grad):
@@ -132,10 +132,10 @@ class Jax2TfTest(test_util.TestCase):
           restored.f, *tree.map_structure(np.zeros_like, inputs))
     rejax_too_func = self.variant(rejax_too_func)
     rejax_too_outputs = rejax_too_func(*inputs)
-    jax.tree_map(self.assertAllClose, rejax_too_outputs, tf_outputs)
+    jax.tree.map(self.assertAllClose, rejax_too_outputs, tf_outputs)
     if with_grad:
       rejax_too_grads = _compute_gradients(rejax_too_func, *inputs)
-      jax.tree_map(assert_grad_all_close, jax_grads, rejax_too_grads)
+      jax.tree.map(assert_grad_all_close, jax_grads, rejax_too_grads)
 
   @chex.variants(with_jit=True, without_jit=True)
   @parameterized.named_parameters(

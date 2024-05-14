@@ -82,7 +82,7 @@ class ShardingTest(test_util.TestCase):
         np.array(jax.devices()).reshape((2, 4)), ('data', 'model'))
     params_pspecs = _get_param_pspecs()
     def to_xla_sharding(pspecs):
-      return jax.tree_map(
+      return jax.tree.map(
           lambda x: jax.sharding.NamedSharding(mesh, x), pspecs)
 
     partitioned_apply = jax.jit(

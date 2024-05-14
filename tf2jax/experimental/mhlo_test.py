@@ -62,7 +62,7 @@ class MhloTest(chex.TestCase):
 
     inputs = (np.ones((3, 2), dtype=np.float32) * 10,)
     mhlo_text = _convert_to_mhlo(
-        fn, jax.tree_map(np.zeros_like, inputs), dialect=dialect)
+        fn, jax.tree.map(np.zeros_like, inputs), dialect=dialect)
     mhlo_module = mhlo.MhloModule(module=mhlo_text, fun_name="test_module")
 
     chex.assert_trees_all_close(
@@ -94,7 +94,7 @@ class MhloTest(chex.TestCase):
         np.ones((3, 2), dtype=np.float32) * 20,
     )
     mhlo_text = _convert_to_mhlo(
-        fn, jax.tree_map(np.zeros_like, inputs), dialect=dialect)
+        fn, jax.tree.map(np.zeros_like, inputs), dialect=dialect)
     mhlo_module = mhlo.MhloModule(module=mhlo_text, fun_name="test_module")
     chex.assert_trees_all_close(
         mhlo.mhlo_apply(*inputs, module=mhlo_module), fn(*inputs))
@@ -125,7 +125,7 @@ class MhloTest(chex.TestCase):
         np.ones((3, 2), dtype=np.float32) * 20,
     )
     mhlo_text = _convert_to_mhlo(
-        fn, jax.tree_map(np.zeros_like, inputs), dialect=dialect)
+        fn, jax.tree.map(np.zeros_like, inputs), dialect=dialect)
     mhlo_module = mhlo.MhloModule(module=mhlo_text, fun_name="test_module")
     chex.assert_trees_all_close(
         mhlo.mhlo_apply(*inputs, module=mhlo_module), fn(*inputs))
@@ -156,7 +156,7 @@ class MhloTest(chex.TestCase):
         np.ones((4,), dtype=np.int32) * 10,
     )
     mhlo_text = _convert_to_mhlo(
-        fn, jax.tree_map(np.zeros_like, inputs), dialect=dialect)
+        fn, jax.tree.map(np.zeros_like, inputs), dialect=dialect)
     mhlo_module = mhlo.MhloModule(module=mhlo_text, fun_name="test_module")
     chex.assert_trees_all_close(
         mhlo.mhlo_apply(*inputs, module=mhlo_module), fn(*inputs))
