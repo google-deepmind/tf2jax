@@ -1727,7 +1727,7 @@ def _roll(proto):
 @register_operation("ScatterNd")
 def _scatter_nd(proto):
   """Parse a ScatterNd op."""
-  _check_attrs(proto, {"T", "Tindices"})
+  _check_attrs(proto, {"T", "Tindices", "bad_indices_policy"})
 
   def _func(
       indices: jnp.ndarray,
