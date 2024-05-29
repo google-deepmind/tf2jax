@@ -1007,7 +1007,7 @@ def _fused_batch_norm(proto):
 @register_operation("GatherNd")
 def _gather_nd(proto):
   """Parse a GatherNd Op."""
-  _check_attrs(proto, {"Tindices", "Tparams"})
+  _check_attrs(proto, {"Tindices", "Tparams", "bad_indices_policy"})
 
   def _func(params: jnp.ndarray, indices: jnp.ndarray) -> jnp.ndarray:
     return params[tuple(anp.moveaxis(indices, -1, 0))]
@@ -1727,7 +1727,7 @@ def _roll(proto):
 @register_operation("ScatterNd")
 def _scatter_nd(proto):
   """Parse a ScatterNd op."""
-  _check_attrs(proto, {"T", "Tindices"})
+  _check_attrs(proto, {"T", "Tindices", "bad_indices_policy"})
 
   def _func(
       indices: jnp.ndarray,
