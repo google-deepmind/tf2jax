@@ -102,6 +102,7 @@ def get_jax_dtype(dtype: tf.DType):
 
 
 # Simple numeric ops.
+abs_ = lambda x: _get_np(x).abs(x)
 add = lambda x, y: _get_np(x, y).add(x, y)
 equal = lambda x, y: _get_np(x, y).equal(x, y)
 floor_divide = lambda x, y: _get_np(x, y).floor_divide(x, y)
@@ -109,6 +110,9 @@ greater = lambda x, y: _get_np(x, y).greater(x, y)
 greater_equal = lambda x, y: _get_np(x, y).greater_equal(x, y)
 less = lambda x, y: _get_np(x, y).less(x, y)
 less_equal = lambda x, y: _get_np(x, y).less_equal(x, y)
+logical_and = lambda x, y: _get_np(x, y).logical_and(x, y)
+logical_not = lambda x: _get_np(x).logical_not(x)
+logical_or = lambda x, y: _get_np(x, y).logical_or(x, y)
 maximum = lambda x, y: _get_np(x, y).maximum(x, y)
 minimum = lambda x, y: _get_np(x, y).minimum(x, y)
 mod = lambda x, y: _get_np(x, y).mod(x, y)
@@ -117,6 +121,7 @@ power = lambda x, y: _get_np(x, y).power(x, y)
 negative = lambda x: _get_np(x).negative(x)
 not_equal = lambda x, y: _get_np(x, y).not_equal(x, y)
 reciprocal = lambda x: _get_np(x).reciprocal(x)
+sign = lambda x: _get_np(x).sign(x)
 subtract = lambda x, y: _get_np(x, y).subtract(x, y)
 true_divide = lambda x, y: _get_np(x, y).true_divide(x, y)
 

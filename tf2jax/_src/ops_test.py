@@ -147,6 +147,16 @@ class OpsTest(test_util.TestCase):
     self._test_convert(tf_func, inputs)
 
   @chex.variants(with_jit=True, without_jit=True)
+  @parameterized.parameters("Abs", "Sign")
+  def test_unary_numerics_static(self, op_name):
+    inputs = np.array([4.0, 3.0]).astype(np.float32)
+
+    def tf_static():
+      vals = getattr(tf.raw_ops, op_name)(x=inputs)
+      return tf.zeros(tf.cast(vals, tf.int32))
+    self._test_convert(tf_static, [])
+
+  @chex.variants(with_jit=True, without_jit=True)
   @parameterized.parameters("Atan2", "Atan2")
   def test_binary_numerics(self, op_name):
     np.random.seed(42)
@@ -237,6 +247,18 @@ class OpsTest(test_util.TestCase):
       kwargs = dict(x=x) if op_name == "LogicalNot" else dict(x=x, y=y)
       return getattr(tf.raw_ops, op_name)(**kwargs)
     self._test_convert(tf_func, inputs)
+
+    # Check static inputs result in static outputs.
+    def tf_static():
+      if op_name == "LogicalNot":
+        vals = tf_func(x=np.array([True, False]), y=None)
+      else:
+        vals = tf_func(
+            x=np.array([True, False, True, False]),
+            y=np.array([False, False, True, True]),
+        )
+      return tf.zeros(tf.cast(vals, tf.int32))
+    self._test_convert(tf_static, [])
 
   @chex.variants(with_jit=True, without_jit=True)
   @parameterized.parameters("LeftShift", "RightShift")

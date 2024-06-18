@@ -67,7 +67,7 @@ def _get_jax_op(
 
 
 _jax_ops = {
-    "Abs": _get_jax_op(jnp.abs, {"T"}),
+    "Abs": _get_jax_op(anp.abs_, {"T"}),
     "Add": _get_jax_op(anp.add, {"T"}),
     "AddN": _get_jax_op(
         lambda *args: anp.sum_(anp.stack(args, axis=0), axis=0, keepdims=False),
@@ -141,9 +141,9 @@ _jax_ops = {
     "Lgamma": _get_jax_op(jax.lax.lgamma, {"T"}),
     "Log": _get_jax_op(jnp.log, {"T"}),
     "Log1p": _get_jax_op(jnp.log1p, {"T"}),
-    "LogicalAnd": _get_jax_op(jnp.logical_and, {"T"}),
-    "LogicalNot": _get_jax_op(jnp.logical_not, {"T"}),
-    "LogicalOr": _get_jax_op(jnp.logical_or, {"T"}),
+    "LogicalAnd": _get_jax_op(anp.logical_and, {"T"}),
+    "LogicalNot": _get_jax_op(anp.logical_not, {"T"}),
+    "LogicalOr": _get_jax_op(anp.logical_or, {"T"}),
     "Minimum": _get_jax_op(anp.minimum, {"T"}),
     "Maximum": _get_jax_op(anp.maximum, {"T"}),
     "Mul": _get_jax_op(anp.multiply, {"T"}),
@@ -174,7 +174,7 @@ _jax_ops = {
     "Rsqrt": _get_jax_op(jax.lax.rsqrt, {"T"}),
     "Shape": _get_jax_op(lambda x: np.array(jnp.shape(x)), {"T", "out_type"}),
     "Sigmoid": _get_jax_op(jax.nn.sigmoid, {"T"}),
-    "Sign": _get_jax_op(jnp.sign, {"T"}),
+    "Sign": _get_jax_op(anp.sign, {"T"}),
     "Sin": _get_jax_op(jnp.sin, {"T"}),
     "Sinh": _get_jax_op(jnp.sinh, {"T"}),
     "Size": _get_jax_op(lambda x: np.prod(jnp.shape(x), dtype=np.int32),
