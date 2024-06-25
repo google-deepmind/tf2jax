@@ -26,6 +26,11 @@ import jax.numpy as jnp
 
 from jaxlib.mlir import ir
 
+if jax.__version_info__ <= (0, 4, 29):
+  from jax.experimental import export  # pylint: disable=g-import-not-at-top  # pytype: disable=import-error
+else:
+  from jax import export  # pylint: disable=g-import-not-at-top  # pytype: disable=import-error
+
 
 safe_zip = jax.util.safe_zip
 
@@ -134,17 +139,7 @@ def mhlo_apply_abstract_eval(
         if module.assume_grad_fn:
           # TODO(b/329832868) Fix this properly.
           out_shape = in_avals[idx].shape
-        elif jax.__version_info__ <= (0, 4, 14):
-          from jax.experimental.jax2tf import shape_poly  # pylint: disable=g-import-not-at-top  # pytype: disable=import-error
-          out_shape = shape_poly._parse_spec(out_shape, res.shape)  # pylint: disable=protected-access # pytype: disable=module-attr
-        elif jax.__version_info__ <= (0, 4, 20):
-          from jax.experimental.export import shape_poly  # pylint: disable=g-import-not-at-top  # pytype: disable=import-error
-          out_shape = shape_poly._parse_spec(out_shape, res.shape)  # pylint: disable=protected-access # pytype: disable=module-attr
-        elif jax.__version_info__ <= (0, 4, 23):
-          from jax.experimental.export import shape_poly  # pylint: disable=g-import-not-at-top  # pytype: disable=import-error
-          out_shape = shape_poly.symbolic_shape(out_shape, like=res.shape)
         else:
-          from jax.experimental import export  # pylint: disable=g-import-not-at-top  # pytype: disable=import-error
           out_shape = export.symbolic_shape(
               out_shape, like=res.shape, scope=symbolic_scope
           )

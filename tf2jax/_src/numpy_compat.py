@@ -69,9 +69,14 @@ _NP_LIKES = (np.ndarray, np.number, np.bool_, bool, int, float, complex)
 
 # We avoid importing jax2tf.shape_poly.is_poly_dim as jax2tf often depends
 # on the most recent tensorflow version.
-# This should reflect is_poly_dim() at
-# https://github.com/google/jax/blob/main/jax/experimental/jax2tf/shape_poly.py#L676
 def is_poly_dim(x) -> bool:
+  """Checks if `x` is a symbolic dimension."""
+  if jax.__version_info__ >= (0, 4, 30):
+    from jax import export  # pylint: disable=g-import-not-at-top  # pytype: disable=import-error
+    return export.is_symbolic_dim(x)
+
+  # This should reflect is_poly_dim() at
+  # https://github.com/google/jax/blob/main/jax/experimental/jax2tf/shape_poly.py#L676
   # Array types.
   if isinstance(x, (np.ndarray, jax.core.Tracer, xc.ArrayImpl)):  # pylint: disable=isinstance-second-argument-not-valid-type
     return False
