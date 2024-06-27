@@ -1102,6 +1102,7 @@ class _IfOp(_HigherOrderFunction):
   def __call__(self, pred, *operand, then_fun, else_fun):
     true_fun = lambda args: then_fun(*args)
     false_fun = lambda args: else_fun(*args)
+    operand = [jnp.asarray(x) for x in operand]
     return jax.lax.cond(
         pred, true_fun=true_fun, false_fun=false_fun, operand=operand)
 
