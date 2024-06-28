@@ -1166,11 +1166,6 @@ class Jax2TfTest(test_util.TestCase):
         grad_tols=tols)
 
   def test_explicit_native_serialization(self):
-    if test_util.parse_version(tf.version.VERSION) < test_util.parse_version(
-        "2.12.0"
-    ):
-      self.skipTest(f"Requires tf 2.12.0 or later, found {tf.version.VERSION}.")
-
     def forward(x):
       return x + 3.14
 

@@ -339,8 +339,6 @@ class OpsTest(test_util.TestCase):
     strides = (1, 3, 2, 1)
 
     if data_format == "NCHW":
-      if jax.default_backend().lower() == "cpu":
-        self.skipTest("TensorFlow AvgPool does not support NCHW on CPU.")
       inputs = np.transpose(inputs, [0, 3, 1, 2])
       ksize = _reorder(ksize, [0, 3, 1, 2])
       strides = _reorder(strides, [0, 3, 1, 2])
@@ -620,8 +618,6 @@ class OpsTest(test_util.TestCase):
     filters = np.random.normal(size=filter_shape).astype(np.float32)
     inputs = np.random.normal(size=input_shape).astype(np.float32)
     if data_format == "NCHW":
-      if jax.default_backend().lower() == "cpu":
-        self.skipTest("TensorFlow Conv2D does not support NCHW on CPU.")
       inputs = np.transpose(inputs, [0, 3, 1, 2])
       strides = _reorder(strides, [0, 3, 1, 2])
       dilations = _reorder(dilations, [0, 3, 1, 2])
@@ -664,9 +660,6 @@ class OpsTest(test_util.TestCase):
     filters = np.random.normal(size=[7, 7, 128, 13]).astype(np.float32)
     inputs = np.random.normal(size=[3, 4, 4, 13]).astype(np.float32)
     if data_format == "NCHW":
-      if jax.default_backend().lower() == "cpu":
-        self.skipTest(
-            "TensorFlow Conv2DBackpropInput does not support NCHW on CPU.")
       inputs = np.transpose(inputs, [0, 3, 1, 2])
       strides = _reorder(strides, [0, 3, 1, 2])
       dilations = _reorder(dilations, [0, 3, 1, 2])
@@ -768,9 +761,6 @@ class OpsTest(test_util.TestCase):
     dilations = [1, 1, 1, 1]
 
     if data_format == "NCHW":
-      if jax.default_backend().lower() == "cpu":
-        self.skipTest(
-            "TensorFlow DepthwiseConv2dNative does not support NCHW on CPU.")
       inputs = np.transpose(inputs, [0, 3, 1, 2])
       strides = _reorder(strides, [0, 3, 1, 2])
       dilations = _reorder(dilations, [0, 3, 1, 2])
@@ -1081,13 +1071,6 @@ class OpsTest(test_util.TestCase):
 
   @chex.variants(with_jit=True, without_jit=True)
   def test_inplace_add(self):
-    if test_util.parse_version(tf.version.VERSION) >= test_util.parse_version(
-        "2.14.0"
-    ):
-      self.skipTest(
-          f"Requires earlier than tf 2.14.0, found {tf.version.VERSION}."
-      )
-
     np.random.seed(42)
 
     @tf.function
@@ -1116,13 +1099,6 @@ class OpsTest(test_util.TestCase):
 
   @chex.variants(with_jit=True, without_jit=True)
   def test_inplace_update(self):
-    if test_util.parse_version(tf.version.VERSION) >= test_util.parse_version(
-        "2.14.0"
-    ):
-      self.skipTest(
-          f"Requires earlier than tf 2.14.0, found {tf.version.VERSION}."
-      )
-
     np.random.seed(42)
 
     @tf.function
@@ -1278,8 +1254,6 @@ class OpsTest(test_util.TestCase):
     strides = (1, 3, 2, 1)
 
     if data_format == "NCHW":
-      if jax.default_backend().lower() == "cpu":
-        self.skipTest("TensorFlow MaxPool does not support NCHW on CPU.")
       inputs = np.transpose(inputs, [0, 3, 1, 2])
       ksize = _reorder(ksize, [0, 3, 1, 2])
       strides = _reorder(strides, [0, 3, 1, 2])
@@ -2185,9 +2159,6 @@ class OpsTest(test_util.TestCase):
     def while_loop(x):
       return tf.while_loop(cond, body, [x, step])
     self._test_convert(while_loop, inputs)
-
-    if jax.default_backend().lower() == "gpu":
-      self.skipTest("Skip remaining tests on GPU due to CUDA errors.")
 
     def raw_stateless_while(x):
       loop_vars = [x, step]
