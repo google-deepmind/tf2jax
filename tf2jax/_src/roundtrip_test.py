@@ -69,6 +69,17 @@ def uses_native_serialization():
 
 class Jax2TfTest(test_util.TestCase):
 
+  def setUp(self):
+    super().setUp()
+    if not uses_native_serialization():
+      self._xla_op = tf2jax.ops._jax_ops.pop("XlaCallModule", None)
+
+  def tearDown(self):
+    super().tearDown()
+    if not uses_native_serialization():
+      if self._xla_op is not None:
+        tf2jax.ops._jax_ops["XlaCallModule"] = self._xla_op
+
   def _test_convert(
       self,
       jax_func,
