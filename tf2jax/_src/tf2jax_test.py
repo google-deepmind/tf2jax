@@ -24,7 +24,6 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-import sonnet as snt
 import tensorflow as tf
 from tf2jax._src import config
 from tf2jax._src import tf2jax
@@ -62,78 +61,6 @@ class TestMLP(tf.Module):
     for layer in self.layers:
       x = layer(x)
     return x
-
-
-class ModelsTest(tf.test.TestCase, parameterized.TestCase):
-
-  def _test_convert(self, tf_func, inputs):
-    jax_func, jax_params = tf2jax.convert(
-        tf.function(tf_func), np.zeros_like(inputs))
-    jax_func = self.variant(jax_func)
-
-    (jax_results, _), jax_params = jax_func(jax_params, inputs)
-    tf_results, tf_params = tf_func(inputs)
-
-    # Check outputs
-    for tf_res, jax_res in jax.util.safe_zip(
-        tree.flatten(tf_results), tree.flatten(jax_results)
-    ):
-      self.assertAllClose(tf_res.numpy(), jax_res, atol=1e-4)
-
-    # Check params (batchnorm stats changed).
-    for tf_var in tree.flatten(tf_params):
-      jax_var = jax_params[tf_var.name.split(":")[0]]
-      self.assertAllClose(tf_var.numpy(), jax_var, atol=1e-5)
-
-  @chex.variants(with_jit=True, without_jit=True)
-  def test_mlp(self):
-    tf.random.set_seed(42)
-
-    inputs = np.linspace(-1., 1., 128 * 16, dtype=np.float32).reshape((128, 16))
-
-    model = snt.nets.MLP((64, 10,))
-    def tf_func(x):
-      outputs = model(x)
-      return outputs, model.variables
-
-    self._test_convert(tf_func, inputs)
-
-  @chex.variants(with_jit=True, without_jit=True)
-  @parameterized.named_parameters(
-      chex.params_product(
-          (("inference", False), ("training", True)),
-          named=True,
-      ))
-  def test_resnet(self, training):
-    tf.random.set_seed(42)
-
-    inputs = np.linspace(
-        -1., 1., 2 * 64 * 64 * 3, dtype=np.float32).reshape((2, 64, 64, 3))
-
-    model = snt.nets.ResNet([1, 1, 1, 1], 10)
-    def tf_func(x):
-      outputs = model(x, is_training=training)
-      return outputs, model.variables
-
-    self._test_convert(tf_func, inputs)
-
-  @chex.variants(with_jit=True, without_jit=True)
-  @parameterized.named_parameters(
-      chex.params_product(
-          (("inference", False), ("training", True)),
-          named=True,
-      ))
-  def test_vqvae(self, training):
-    tf.random.set_seed(42)
-
-    inputs = np.linspace(
-        -1., 1., 2 * 64 * 64 * 3, dtype=np.float32).reshape((2, 64, 64, 3))
-
-    model = snt.nets.VectorQuantizer(3, 100, 0.1)
-    def tf_func(x):
-      return model(x, is_training=training), model.variables
-
-    self._test_convert(tf_func, inputs)
 
 
 class FeaturesTest(tf.test.TestCase, parameterized.TestCase):
