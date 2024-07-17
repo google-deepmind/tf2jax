@@ -16,13 +16,11 @@
 
 from absl.testing import absltest
 from absl.testing import parameterized
-
 import chex
 import haiku as hk
 import jax
 from jax.experimental import jax2tf
 import jax.numpy as jnp
-
 import numpy as np
 import tensorflow as tf
 from tf2jax._src import test_util
@@ -53,19 +51,13 @@ class ShardingTest(test_util.TestCase):
 
   @parameterized.named_parameters(
       chex.params_product(
-          (('enable_xla', True), ('disable_xla', False)),
           (('native_serialization', True), ('graph_serialization', False)),
           named=True,
       )
   )
-  def test_sharding(self, enable_xla, native_serialization):
+  def test_sharding(self, native_serialization):
     if jax.default_backend().upper() != 'TPU':
       self.skipTest('Only run sharding tests on TPU.')
-
-    if not enable_xla and native_serialization:
-      self.skipTest(
-          'native_serializaton is only supported with enable_xla=True.'
-      )
 
     # Set up network and inputs.
     transformed = hk.without_apply_rng(hk.transform(_net))
@@ -79,11 +71,12 @@ class ShardingTest(test_util.TestCase):
     # Partitioned to 8 devices.
     assert jax.device_count() == 8, jax.device_count()
     mesh = jax.sharding.Mesh(
-        np.array(jax.devices()).reshape((2, 4)), ('data', 'model'))
+        np.array(jax.devices()).reshape((2, 4)), ('data', 'model')
+    )
     params_pspecs = _get_param_pspecs()
+
     def to_xla_sharding(pspecs):
-      return jax.tree.map(
-          lambda x: jax.sharding.NamedSharding(mesh, x), pspecs)
+      return jax.tree.map(lambda x: jax.sharding.NamedSharding(mesh, x), pspecs)
 
     partitioned_apply = jax.jit(
         transformed.apply,
@@ -116,7 +109,6 @@ class ShardingTest(test_util.TestCase):
     def tf_fn(params, inputs):
       return jax2tf.convert(
           partitioned_apply,
-          enable_xla=enable_xla,
           native_serialization=native_serialization,
       )(params, inputs)
 
@@ -145,6 +137,7 @@ class ShardingTest(test_util.TestCase):
     @jax.grad
     def reloaded_grad(params, xs):
       return jnp.sum(jax.jit(jax_fn)(params, xs))
+
     self.assertAllClose(
         jax.jit(unpartitioned_grad)(params, images),
         jax.jit(reloaded_grad)(params, images),
