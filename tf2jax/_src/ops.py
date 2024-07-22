@@ -2249,7 +2249,7 @@ def _tensor_list_stack(proto):
 @register_operation("TensorScatterUpdate")
 def _tensor_scatter_update(proto):
   """Parse an TensorScatterUpdate Op."""
-  _check_attrs(proto, {"T", "Tindices"})
+  _check_attrs(proto, {"T", "Tindices", "bad_indices_policy"})
 
   def _func(
       operand: jnp.ndarray,
