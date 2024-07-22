@@ -15,8 +15,6 @@
 """Tests for JAX -> TF -> JAX with partitioning."""
 
 from absl.testing import absltest
-from absl.testing import parameterized
-import chex
 import haiku as hk
 import jax
 from jax.experimental import jax2tf
@@ -49,13 +47,7 @@ def _get_param_pspecs():
 
 class ShardingTest(test_util.TestCase):
 
-  @parameterized.named_parameters(
-      chex.params_product(
-          (('native_serialization', True), ('graph_serialization', False)),
-          named=True,
-      )
-  )
-  def test_sharding(self, native_serialization):
+  def test_sharding(self):
     if jax.default_backend().upper() != 'TPU':
       self.skipTest('Only run sharding tests on TPU.')
 
@@ -107,10 +99,7 @@ class ShardingTest(test_util.TestCase):
     # Convert to TF and save.
     @tf.function(autograph=False, jit_compile=True)
     def tf_fn(params, inputs):
-      return jax2tf.convert(
-          partitioned_apply,
-          native_serialization=native_serialization,
-      )(params, inputs)
+      return jax2tf.convert(partitioned_apply)(params, inputs)
 
     tf_fn(params, images)
     module = tf.Module()
