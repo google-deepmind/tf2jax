@@ -21,7 +21,7 @@ from absl import logging
 
 import jax
 from jax.interpreters import mlir
-from jax.lib import xla_client as xc
+from jax.lib import xla_extension
 import jax.numpy as jnp
 from jaxlib.mlir import ir
 
@@ -207,7 +207,7 @@ def _xla_call_module(proto):
       return target_platforms.index(jax_backend)
 
   if version >= 4:
-    mhlo_text = xc._xla.mlir.deserialize_portable_artifact(  # pylint: disable=protected-access
+    mhlo_text = xla_extension.mlir.deserialize_portable_artifact(
         proto.attr["module"].s
     )
   else:
