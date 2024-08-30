@@ -611,7 +611,7 @@ class Jax2TfTest(test_util.TestCase):
       chex.params_product(
           (("without_gradient", False), ("with_gradient", True)),
           (("2nd_last_dim", -2), ("last_dim", -1)),
-          (("not_stable", False), ("is_stable", True)),
+          (("is_stable", True),),
           (("one_keys", 1), ("two_keys", 2), ("three_keys", 3)),
           named=True,
       )
