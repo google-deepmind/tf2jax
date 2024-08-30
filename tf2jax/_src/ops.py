@@ -1390,6 +1390,46 @@ def _min(proto):
   return _func
 
 
+def _mul_no_nan_forward(x: jnp.ndarray, y: jnp.ndarray) -> jnp.ndarray:
+  """Returns zero if y is zero, even if x if infinite or NaN."""
+  mul = anp.multiply(x, y)
+  return jnp.where(y == 0.0, jnp.zeros_like(mul), mul)
+
+
+@register_operation("MulNoNan")
+def _mul_no_nan(proto):
+  """Parse a MulNoNan op."""
+  _check_attrs(proto, {"T"})
+
+  @jax.custom_gradient
+  def _func(
+      x: jnp.ndarray, y: jnp.ndarray
+  ) -> Tuple[
+      jnp.ndarray,
+      Callable[[jnp.ndarray], Tuple[jnp.ndarray, jnp.ndarray]],
+  ]:
+    def _grad(g: jnp.ndarray) -> Tuple[jnp.ndarray, jnp.ndarray]:
+      """Given upstream grad G and a Div op: Z = X*Y, the gradients are.
+
+        dX = G * Y
+        dY = X * G
+
+      Args:
+        g: Upstream gradient.
+
+      Returns:
+        forward value: mul_no_nan(x, y)
+        grad: Gradient information in TF format.
+      """
+      dx = _mul_no_nan_forward(g, y)
+      dy = _mul_no_nan_forward(x, g)
+      return dx, dy
+
+    return _mul_no_nan_forward(x, y), _grad
+
+  return _func
+
+
 @register_operation("OneHot")
 def _one_hot(proto):
   """Parse a OneHot Op."""
