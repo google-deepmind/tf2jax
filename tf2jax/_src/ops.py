@@ -1668,7 +1668,7 @@ def _range(proto):
 @register_operation("Reshape")
 def _reshape(proto):
   _check_attrs(proto, {"T", "Tshape"})
-  return lambda x, shape: jnp.reshape(x, newshape=shape)
+  return lambda x, shape: jnp.reshape(x, shape=shape)
 
 
 @register_operation("ResizeBilinear")
