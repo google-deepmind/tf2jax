@@ -2203,7 +2203,8 @@ def _tensor_list_get_item(proto):
       index: jnp.ndarray,
       element_shape: jnp.ndarray,
   ) -> jnp.ndarray:
-    assert xs.dtype == dtype
+    if not config.get_config("disable_assert_in_tensor_list_get_item"):
+      assert xs.dtype == dtype
     if xs.size == 0:
       return np.zeros(element_shape, dtype=dtype)
     if isinstance(index, jax.Array):

@@ -35,6 +35,10 @@ _config = dict(
     # Enable checks that each natively serialized computation is executed on a
     # platform for which it was lowered.
     xlacallmodule_strict_checks=True,
+    # The type check assert in `TensorListGetItem` results in an error when
+    # converting `tensorflow_probability`'s `HiddenMarkovModel.posterior_mode`
+    # to JAX. Here we allow to disable it.
+    disable_assert_in_tensor_list_get_item=False,
 )
 
 
