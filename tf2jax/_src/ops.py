@@ -21,7 +21,6 @@ from typing import Any, Callable, List, Optional, Mapping, Protocol, Sequence, S
 from absl import logging
 
 import jax
-from jax._src.lax import control_flow as lax_control_flow
 from jax.experimental import checkify
 from jax.lib import xla_client
 import jax.numpy as jnp
@@ -2486,7 +2485,7 @@ def _xla_optimization_barrier(proto):
   def _func(*operands: jnp.ndarray) -> Tuple[jnp.ndarray, ...]:
     # TODO(b/241584320) Note this does not reproduce the remat transform in the
     # forward pass, which may require some heurstics when parsing the graphdef.
-    return lax_control_flow.optimization_barrier_p.bind(*operands)
+    return jax.lax.optimization_barrier_p.bind(*operands)
 
   return _func
 
