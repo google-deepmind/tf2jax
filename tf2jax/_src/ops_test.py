@@ -2147,6 +2147,15 @@ class OpsTest(test_util.TestCase):
     self._test_convert(where, inputs)
 
   @chex.variants(with_jit=True, without_jit=True)
+  def test_xlogy(self):
+    x = np.array([0.0, 0.0, 5.0, 5.0])
+    y = np.array([0.0, 5.0, 0.0, 5.0])
+
+    def xlogy(x, y):
+      return tf.raw_ops.Xlogy(x=x, y=y)
+    self._test_convert(xlogy, [x, y])
+
+  @chex.variants(with_jit=True, without_jit=True)
   def test_while_loop(self):
     inputs = np.array(np.reshape(range(24), (4, 3, 2)), dtype=np.float32)
     # If offset is a tensor, then the raw versions will fail to capture them as
