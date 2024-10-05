@@ -1807,7 +1807,10 @@ def _slice(proto):
       sizes: jnp.ndarray,
   ) -> jnp.ndarray:
     """`begins` and `sizes` must be concrete arrays."""
-    slices = [slice(b, b + s) for b, s in safe_zip(begins, sizes)]
+    slices = [
+        slice(b, (b + s) if s != -1 else None)
+        for b, s in safe_zip(begins, sizes)
+    ]
     return x[tuple(slices)]
 
   return _func

@@ -1721,7 +1721,11 @@ class OpsTest(test_util.TestCase):
 
   @chex.variants(with_jit=True, without_jit=True)
   def test_slice(self):
-    inputs, begins, sizes = [np.array([[1, 2], [3, 4], [5, 6]]), [1, 1], [2, 1]]
+    inputs, begins, sizes = [
+        np.array([[1, 2], [3, 4], [5, 6]]),
+        [1, 1],
+        [2, -1],
+    ]
 
     def slice_fn(xs):
       return tf.raw_ops.Slice(input=xs, begin=begins, size=sizes)
