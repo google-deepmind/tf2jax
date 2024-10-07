@@ -24,6 +24,7 @@ import jax
 from jax.experimental import checkify
 from jax.lib import xla_client
 import jax.numpy as jnp
+import jax.scipy as jsp
 import numpy as np
 import tensorflow as tf
 from tf2jax._src import config
@@ -201,6 +202,7 @@ _jax_ops = {
         functools.partial(jax.ops.segment_sum, indices_are_sorted=False),
         {"T", "Tindices", "Tnumsegments"}),
     "Where": _get_jax_op(jnp.argwhere, {"T"}),
+    "Xlogy": _get_jax_op(jsp.special.xlogy, {"T"}),
     "ZerosLike": _get_jax_op(jnp.zeros_like, {"T"}),
     # The assignment logic is handled in _OpNode and convert().
     "AssignAddVariableOp": _get_jax_op(jnp.add, {"dtype"}),
