@@ -1378,11 +1378,18 @@ def _filter_nodes(
 
 
 def _convert_all_gradient_functions(
-    graph: Any, library: Dict[str, _LibraryFunction]
+    graph: Any,
+    library: Dict[str, _LibraryFunction | None],
+    *,
+    recurse: bool = True,
 ) -> None:
   """Recursively convert all custom gradients in a tf.Graph."""
   for node, graph in _filter_nodes(_contains_custom_gradient, graph):
-    _convert_gradient_function(node, graph, library)
+    if recurse:
+      _convert_gradient_function(node, graph, library)
+    else:
+      grad_fn_name = str(node.attr["_gradient_op_type"].s, "utf-8")
+      library[grad_fn_name] = None
 
 
 def _convert_gradient_function(
@@ -1478,7 +1485,8 @@ def _convert_gradient_function(
       (inspect.Parameter("grad_args", inspect.Parameter.VAR_POSITIONAL),))
 
   def builder():
-    _convert_all_gradient_functions(concrete_tf_grad_fn.graph, library)
+    _convert_all_gradient_functions(
+        concrete_tf_grad_fn.graph, library, recurse=False)
     jax_grad_fn, jax_grad_params = _convert(
         concrete_tf_grad_fn.graph.as_graph_def(),
         signature,

@@ -1048,20 +1048,20 @@ class _IdentityN(_HigherOrderFunction):
   with_custom_gradient: bool
 
   def __call__(self, *args):
-    @jax.custom_gradient
-    def _raise_func(
-        *operands: jnp.ndarray,
-    ) -> Tuple[Tuple[jnp.ndarray, ...], Callable[..., Any]]:
-      def grad_fn(_):
-        raise LookupError(
-            f"Custom gradient `{self.gradient_op_type}` was expected but not"
-            f" found for the node `{self.name}` (op type: IdentityN). This"
-            " function is just a placeholder. The subgraph corresponding to"
-            " this IdentityN node should have been wrapped in"
-            " jax.custom_gradient with the actual gradient function found in"
-            " the TensorFlow gradient registry."
-        )
-      return operands, grad_fn
+    @jax.custom_jvp
+    def _raise_func(*operands: jnp.ndarray) -> Tuple[jnp.ndarray, ...]:
+      return operands
+
+    @_raise_func.defjvp
+    def grad_fn(*_):
+      raise LookupError(
+          f"Custom gradient `{self.gradient_op_type}` was expected but not"
+          f" found for the node `{self.name}` (op type: IdentityN). This"
+          " function is just a placeholder. The subgraph corresponding to"
+          " this IdentityN node should have been wrapped in"
+          " jax.custom_gradient with the actual gradient function found in"
+          " the TensorFlow gradient registry."
+      )
 
     def _warn_func(*operands: jnp.ndarray) -> Tuple[jnp.ndarray, ...]:
       logging.warn(
@@ -1543,14 +1543,14 @@ def _prevent_gradient(proto):
 
   message = str(proto.attr["message"].s, "utf-8")
 
-  @jax.custom_gradient
-  def _raise_func(
-      operand: jnp.ndarray,
-  ) -> Tuple[jnp.ndarray, Callable[..., Any]]:
-    def grad_fn(_):
-      raise LookupError(f"Gradient explicitly prevented on node {proto.name}. "
-                        f"Original reason: {message}")
-    return operand, grad_fn
+  @jax.custom_jvp
+  def _raise_func(operand: jnp.ndarray) -> jnp.ndarray:
+    return operand
+
+  @_raise_func.defjvp
+  def grad_fn(*_):
+    raise LookupError(f"Gradient explicitly prevented on node {proto.name}. "
+                      f"Original reason: {message}")
 
   def _warn_func(operand: jnp.ndarray) -> jnp.ndarray:
     logging.warning("PreventGradient ignored on node %s. Original reason: %s",
