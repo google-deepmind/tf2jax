@@ -19,6 +19,7 @@ from typing import Tuple
 
 import jax
 from jax import core
+from jax import export
 from jax.interpreters import mlir
 from jax.interpreters import xla
 from jax.lib import xla_client as xc
@@ -26,11 +27,6 @@ from jax.lib import xla_extension
 import jax.numpy as jnp
 
 from jaxlib.mlir import ir
-
-if jax.__version_info__ <= (0, 4, 29):
-  from jax.experimental import export  # pylint: disable=g-import-not-at-top  # pytype: disable=import-error
-else:
-  from jax import export  # pylint: disable=g-import-not-at-top  # pytype: disable=import-error
 
 
 safe_zip = jax.util.safe_zip
