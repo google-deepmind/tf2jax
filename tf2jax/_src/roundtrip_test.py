@@ -838,6 +838,36 @@ class Jax2TfTest(test_util.TestCase):
     self.assertAllClose(expected_outputs, re_jax_outputs)
     self.assertAllClose(expected_grads, re_jax_grads)
 
+    # Jax -> TF -> SavedModel -> TF -> Jax -> TF
+    tf_forward2 = jax2tf.convert(re_jax_forward, with_gradient=with_grad)
+    tf_forward2 = tf.function(tf_forward2, autograph=False)
+    concrete_tf_forward2 = tf_forward2.get_concrete_function(
+        tf.TensorSpec(shape=(3, 2))
+    )
+    tf_outputs2 = concrete_tf_forward2(inputs)
+    self.assertAllClose(tf_outputs2, re_jax_outputs)
+
+    # Jax -> TF -> SavedModel -> TF -> Jax -> TF -> SavedModel
+    model = tf.Module()
+    model.f = tf_forward2
+    tmp_dir = self.create_tempdir()
+    tf.saved_model.save(model, tmp_dir.full_path)
+    del model
+    restored2 = tf.saved_model.load(tmp_dir.full_path)
+    new_tf_outputs = restored2.f(inputs)
+    self.assertAllClose(new_tf_outputs, tf_outputs2)
+
+    # Jax -> TF -> SavedModel -> TF -> Jax -> TF -> SavedModel -> Jax
+    with config.override_config("convert_custom_gradient", True):
+      re_jax_forward2 = tf2jax.convert_functional(
+          restored2.f, tf.zeros_like(inputs)
+      )
+    re_jax_forward2 = self.variant(re_jax_forward2)
+    re_jax_outputs2 = re_jax_forward2(inputs)
+    re_jax_grads2 = jax.grad(re_jax_forward2)(inputs)
+    self.assertAllClose(expected_outputs, re_jax_outputs2)
+    self.assertAllClose(expected_grads, re_jax_grads2)
+
   @chex.variants(with_jit=True)
   def test_custom_gradient_saved_model(self):
     model = tf.saved_model.load(

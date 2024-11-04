@@ -1443,7 +1443,14 @@ def _convert_gradient_function(
 
   # Alternatively, try running get_concrete_function in a separate thread?
   with inside_call_tf(), clear_shape_env():
-    concrete_tf_grad_fn = tf_grad_fn.get_concrete_function(*input_specs)
+    try:
+      concrete_tf_grad_fn = tf_grad_fn.get_concrete_function(*input_specs)
+    except NotImplementedError as e:
+      logging.info(
+          "Failed to get concrete function for %s: %s", grad_fn_name, e
+      )
+      library[grad_fn_name] = None
+      return
 
   logging.info("Converting gradient function %s", grad_fn_name)
   grad_inputs = concrete_tf_grad_fn.inputs

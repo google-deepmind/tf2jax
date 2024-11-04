@@ -35,11 +35,12 @@ mhlo_apply_p = core.Primitive("mhlo_apply")
 mhlo_apply_p.multiple_results = True
 
 
-@dataclasses.dataclass(frozen=True)
+@dataclasses.dataclass(frozen=True, kw_only=True)
 class MhloModule:
   module: str  # string representation of the MLIR module.
   fun_name: str
   assume_grad_fn: bool = False
+  require_platform_index: bool = False
 
   def __str__(self):
     return f"MhloModule(fun_name={self.fun_name}, ...)"
@@ -62,7 +63,7 @@ mhlo_apply_p.def_impl(mhlo_apply_impl)
 
 # See https://github.com/google/jax/blob/main/jax/_src/interpreters/mlir.py#L115
 # for reference
-def _ir_type_to_dtype(ir_type: ir.Type) -> jnp.dtype:
+def ir_type_to_dtype(ir_type: ir.Type) -> jnp.dtype:
   """Converts MLIR type to JAX dtype."""
   ir_to_jax = {
       ir.IntegerType.get_signless(1): jnp.bool_,
@@ -135,7 +136,8 @@ def mhlo_apply_abstract_eval(
         assert has_polymorphic, has_polymorphic
         if module.assume_grad_fn:
           # TODO(b/329832868) Fix this properly.
-          out_shape = in_avals[idx].shape
+          offset = 1 if module.require_platform_index else 0
+          out_shape = in_avals[idx + offset].shape
         else:
           out_shape = export.symbolic_shape(
               out_shape, like=res.shape, scope=symbolic_scope
@@ -143,7 +145,7 @@ def mhlo_apply_abstract_eval(
       else:
         out_shape = res.shape
       output_specs.append(
-          core.ShapedArray(out_shape, _ir_type_to_dtype(res.element_type))
+          core.ShapedArray(out_shape, ir_type_to_dtype(res.element_type))
       )
     return tuple(output_specs)
 

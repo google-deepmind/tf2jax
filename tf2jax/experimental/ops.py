@@ -45,7 +45,7 @@ def _platform_to_alias(platform: str) -> str:
 @functools.lru_cache(None)
 def _refine_with_static_input_shapes(
     module_text: str, operands: Tuple[jax.core.ShapedArray, ...]
-) -> str:
+) -> tuple[str, list[jax.core.ShapedArray]]:
   """Refine the polymorphic shapes inside a module."""
   # Wrap original main within another function with static input shapes.
   context = mlir.make_ir_context()
@@ -57,8 +57,25 @@ def _refine_with_static_input_shapes(
     symbol_table.set_symbol_name(orig_main, "_orig_main")
     orig_main_name = ir.StringAttr(symbol_table.insert(orig_main)).value
 
-    # Use static shapes
+    # This help refine polymorphic shapes.
     new_main_input_types = [mlir.aval_to_ir_type(x) for x in operands]
+    # Retain the original element type. This is necessary because
+    # jax.custom_gradient will replace integer types with the corresponding
+    # tangent types, i.e. float0.
+    for idx, (ox, nx) in enumerate(
+        zip(orig_main.type.inputs, new_main_input_types, strict=True)
+    ):
+      assert isinstance(nx, ir.RankedTensorType), nx
+      if ox.element_type != nx.element_type:
+        new_main_input_types[idx] = ir.RankedTensorType.get(
+            nx.shape, ox.element_type
+        )
+    # Final input specs to be returned.
+    input_specs = [
+        jax.core.ShapedArray(x.shape, mhlo.ir_type_to_dtype(x.element_type))
+        for x in new_main_input_types
+    ]
+
     orig_output_types = orig_main.type.results
     new_main_ftype = ir.FunctionType.get(
         new_main_input_types, orig_output_types
@@ -109,7 +126,7 @@ def _refine_with_static_input_shapes(
       module,
       validate_static_shapes=all([isinstance(x, int) for x in input_dims]),
   )
-  return mlir.module_to_string(module)
+  return mlir.module_to_string(module), input_specs
 
 
 @ops.register_operation("XlaCallModule")
@@ -141,8 +158,9 @@ def _xla_call_module(proto):
 
   dim_args_spec = tuple(proto.attr["dim_args_spec"].list.s)
   if dim_args_spec:
-    raise ValueError("Dynamic shapes is not yet supported, found "
-                     f"dim_args_spec={dim_args_spec}.")
+    raise ValueError(
+        "Dynamic shapes is not yet supported, found "
+        f"dim_args_spec={dim_args_spec}.")
 
   function_list = tuple(proto.attr["function_list"].list.func)
   if function_list:
@@ -217,10 +235,13 @@ def _xla_call_module(proto):
 
   def _func(*operands: jnp.ndarray) -> Tuple[jnp.ndarray, ...]:
     platform_index = check_platforms()
-    if platform_index is not None and len(target_platforms) > 1:
+    require_platform_index = (
+        platform_index is not None and len(target_platforms) > 1
+    )
+    if require_platform_index:
       operands = (jnp.array(platform_index),) + operands
 
-    refined_mhlo_text = _refine_with_static_input_shapes(
+    refined_mhlo_text, input_specs = _refine_with_static_input_shapes(
         mhlo_text,
         tuple(jax.core.ShapedArray(x.shape, x.dtype) for x in operands),
     )
@@ -228,7 +249,16 @@ def _xla_call_module(proto):
         module=refined_mhlo_text,
         fun_name=proto.name,
         assume_grad_fn=assume_grad_fn,
+        require_platform_index=require_platform_index,
     )
+    if assume_grad_fn:
+      # The change in _refine_with_static_input_shapes is not enough as
+      # depending on whether we are computing gradient via Jax or TF, integer
+      # types may or may not be replaced with float0.
+      operands = [
+          jnp.zeros(x.shape, y.dtype) if x.dtype == jax.dtypes.float0 else x
+          for x, y in zip(operands, input_specs, strict=True)
+      ]
     return mhlo.mhlo_apply(*operands, module=mhlo_module)
 
   return _func
