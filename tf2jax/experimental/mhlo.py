@@ -61,7 +61,7 @@ def mhlo_apply_impl(*args, module: MhloModule):
 mhlo_apply_p.def_impl(mhlo_apply_impl)
 
 
-# See https://github.com/google/jax/blob/main/jax/_src/interpreters/mlir.py#L115
+# See https://github.com/jax-ml/jax/blob/main/jax/_src/interpreters/mlir.py#L115
 # for reference
 def ir_type_to_dtype(ir_type: ir.Type) -> jnp.dtype:
   """Converts MLIR type to JAX dtype."""
@@ -154,7 +154,7 @@ mhlo_apply_p.def_abstract_eval(mhlo_apply_abstract_eval)
 
 
 # Taken from
-# github.com/google/jax/blob/main/jax/experimental/jax2tf/jax_export.py#L859
+# github.com/jax-ml/jax/blob/main/jax/experimental/jax2tf/jax_export.py#L859
 def refine_polymorphic_shapes(
     module: ir.Module, validate_static_shapes: bool
 ) -> ir.Module:
