@@ -1560,7 +1560,7 @@ class OpsTest(test_util.TestCase):
     def range_fn(start, limit, delta):
       return tf.raw_ops.Range(start=start, limit=limit, delta=delta)
     # jnp.range cannot be jitted.
-    with self._assert_if_jitted(jax.core.ConcretizationTypeError):
+    with self._assert_if_jitted(jax.errors.ConcretizationTypeError):
       self._test_convert(range_fn, inputs)
 
     # Check static inputs result in static outputs.
