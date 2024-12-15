@@ -844,7 +844,7 @@ def _eigh(proto):
       evals, evecs = jnp.linalg.eigh(x, symmetrize_input=False)
     else:
       # symmetrize_input does not exist for eigvalsh.
-      # See https://github.com/google/jax/issues/9473
+      # See https://github.com/jax-ml/jax/issues/9473
       evals, evecs = jnp.linalg.eigvalsh(symmetrize(x)), None
 
     # Sorting by eigenvalues to tf.raw_ops.Eig better.
@@ -2655,7 +2655,7 @@ def _xla_variadic_sort(proto):
   return _XlaVariadicSort(dict(comparator=comparator), is_stable=is_stable)
 
 
-# Taken from https://github.com/google/jax/blob/main/jax/_src/lax/lax.py#L1056
+# Taken from https://github.com/jax-ml/jax/blob/main/jax/_src/lax/lax.py#L1056
 def _get_max_identity(dtype):
   if jax.dtypes.issubdtype(dtype, np.inexact):
     return np.array(-np.inf, dtype)
@@ -2665,7 +2665,7 @@ def _get_max_identity(dtype):
     return np.array(False, np.bool_)
 
 
-# Taken from https://github.com/google/jax/blob/main/jax/_src/lax/lax.py#L1064
+# Taken from https://github.com/jax-ml/jax/blob/main/jax/_src/lax/lax.py#L1064
 def _get_min_identity(dtype):
   if jax.dtypes.issubdtype(dtype, np.inexact):
     return np.array(np.inf, dtype)
