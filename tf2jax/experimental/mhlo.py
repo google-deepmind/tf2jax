@@ -20,6 +20,7 @@ from typing import Tuple
 import jax
 from jax import core
 from jax import export
+import jax.extend as jex
 from jax.interpreters import mlir
 from jax.interpreters import xla
 from jax.lib import xla_client as xc
@@ -31,7 +32,7 @@ from jaxlib.mlir import ir
 
 safe_zip = jax.util.safe_zip
 
-mhlo_apply_p = core.Primitive("mhlo_apply")
+mhlo_apply_p = jex.core.Primitive("mhlo_apply")
 mhlo_apply_p.multiple_results = True
 
 

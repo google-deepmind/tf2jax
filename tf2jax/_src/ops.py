@@ -22,6 +22,7 @@ from absl import logging
 
 import jax
 from jax.experimental import checkify
+import jax.extend as jex
 from jax.lib import xla_client
 import jax.numpy as jnp
 import numpy as np
@@ -2554,9 +2555,9 @@ def _xla_sharding(proto):
 
 
 def _maybe_get_jaxpreqn(
-    jaxpr: jax.core.ClosedJaxpr) -> Optional[jax.core.JaxprEqn]:
+    jaxpr: jex.core.ClosedJaxpr) -> Optional[jex.core.JaxprEqn]:
   def is_all_vars(vs):
-    return all([isinstance(v, jax.core.Var) for v in vs])
+    return all([isinstance(v, jex.core.Var) for v in vs])
 
   if (len(jaxpr.eqns) == 1 and
       is_all_vars(jaxpr.jaxpr.invars) and is_all_vars(jaxpr.jaxpr.outvars) and
