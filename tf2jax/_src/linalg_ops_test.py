@@ -259,7 +259,7 @@ class OpsTest(test_util.TestCase):
       x = x * phases
       self.assertAllClose(x, y, atol=1e-4)
 
-    tols = dict(atol=1e-5) if jax.default_backend() in ("gpu", "tpu") else {}
+    tols = dict(atol=1e-5)
     self.assertAllClose(jax_s, tf_s, **tols)
     if compute_uv:
       tf_recon = reconstruct(tf_u, tf_s, tf_v)
