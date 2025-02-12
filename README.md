@@ -325,7 +325,7 @@ performance.
 
 ### Platform Specificity
 
-Natively serialized JAX programs are platform specific ([link](https://github.com/google/jax/blob/main/jax/experimental/jax2tf/README.md#natively-serialized-jax-modules-are-platform-specific)). Executing a natively
+Natively serialized JAX programs are platform specific ([link](https://github.com/jax-ml/jax/blob/main/jax/experimental/jax2tf/README.md#natively-serialized-jax-modules-are-platform-specific)). Executing a natively
 serialized program on platforms other than the one for which it was lowered,
 would raise a ValueError, e.g.:
 
@@ -399,8 +399,8 @@ ops.
 
 [DeepMind JAX Ecosystem]: https://deepmind.com/blog/article/using-jax-to-accelerate-our-research "DeepMind JAX Ecosystem"
 [DeepMind JAX Ecosystem citation]: https://github.com/google-deepmind/jax/blob/main/deepmind2020jax.txt "Citation"
-[JAX]: https://github.com/google/jax "JAX on GitHub"
+[JAX]: https://github.com/jax-ml/jax "JAX on GitHub"
 [TensorFlow]: https://github.com/tensorflow/tensorflow "TensorFlow on GitHub"
-[jax2tf documentation]: https://github.com/google/jax/blob/master/jax/experimental/jax2tf/README.md#calling-tensorflow-functions-from-jax "jax2tf documentation"
-[jax2tf_cumulative_reduction]: https://github.com/google/jax/blob/main/jax/experimental/jax2tf/jax2tf.py#L2172
+[jax2tf documentation]: https://github.com/jax-ml/jax/blob/master/jax/experimental/jax2tf/README.md#calling-tensorflow-functions-from-jax "jax2tf documentation"
+[jax2tf_cumulative_reduction]: https://github.com/jax-ml/jax/blob/main/jax/experimental/jax2tf/jax2tf.py#L2172
 [StableHLO]: https://github.com/openxla/stablehlo
