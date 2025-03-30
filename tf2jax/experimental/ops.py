@@ -24,6 +24,8 @@ from jax.interpreters import mlir
 from jax.lib import xla_extension
 import jax.numpy as jnp
 from jaxlib.mlir import ir
+from jaxlib.mlir.dialects import func
+from jaxlib.mlir.dialects import stablehlo as hlo
 
 from tf2jax._src import config
 from tf2jax._src import ops
@@ -80,7 +82,7 @@ def _refine_with_static_input_shapes(
     new_main_ftype = ir.FunctionType.get(
         new_main_input_types, orig_output_types
     )
-    new_main_op = mlir.func_dialect.FuncOp(
+    new_main_op = func.FuncOp(
         "main",
         new_main_ftype,
         ip=ir.InsertionPoint.at_block_begin(module.body),
@@ -107,17 +109,15 @@ def _refine_with_static_input_shapes(
       ):
         # TODO(shaobohou) Why is the ConvertOp needed?
         if orig_arg_type != new_arg:
-          orig_main_args.append(
-              mlir.hlo.ConvertOp(orig_arg_type, new_arg).result
-          )
+          orig_main_args.append(hlo.ConvertOp(orig_arg_type, new_arg).result)
         else:
           orig_main_args.append(new_arg)
-      call = mlir.func_dialect.CallOp(
+      call = func.CallOp(
           orig_output_types,
           ir.FlatSymbolRefAttr.get(orig_main_name),
           orig_main_args,
       )
-      mlir.func_dialect.ReturnOp(call.results)
+      func.ReturnOp(call.results)
   symbol_table.set_symbol_name(new_main_op, "main")
 
   # Refinement passes.

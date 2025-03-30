@@ -28,6 +28,7 @@ from jax.lib import xla_extension
 import jax.numpy as jnp
 
 from jaxlib.mlir import ir
+from jaxlib.mlir.dialects import func
 
 
 safe_zip = jax.util.safe_zip
@@ -217,7 +218,7 @@ def mhlo_apply_lowering(
       len(args),
   )
 
-  call = mlir.func_dialect.CallOp(
+  call = func.CallOp(
       result_types,
       ir.FlatSymbolRefAttr.get(callee_name),
       args,
