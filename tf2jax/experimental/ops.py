@@ -33,7 +33,7 @@ from tf2jax.experimental import mhlo
 
 
 # See canonicalize_platform for reference
-# https://github.com/google/jax/blob/main/jax/_src/xla_bridge.py#L344
+# https://github.com/jax-ml/jax/blob/main/jax/_src/xla_bridge.py#L344
 def _platform_to_alias(platform: str) -> str:
   aliases = {
       "cuda": "gpu",
@@ -43,7 +43,7 @@ def _platform_to_alias(platform: str) -> str:
 
 
 # Adapted from
-# https://github.com/google/jax/commit/ec8b855fa16962b1394716622c8cbc006ce76b1c
+# https://github.com/jax-ml/jax/commit/ec8b855fa16962b1394716622c8cbc006ce76b1c
 @functools.lru_cache(None)
 def _refine_with_static_input_shapes(
     module_text: str, operands: Tuple[jax.core.ShapedArray, ...]
