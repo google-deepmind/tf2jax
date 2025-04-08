@@ -20,7 +20,6 @@ import operator
 from typing import Sequence, Union
 
 import jax
-from jax.lib import xla_client as xc
 import jax.numpy as jnp
 import numpy as np
 import tensorflow as tf
@@ -78,7 +77,7 @@ def is_poly_dim(x) -> bool:
   # This should reflect is_poly_dim() at
   # https://github.com/google/jax/blob/main/jax/experimental/jax2tf/shape_poly.py#L676
   # Array types.
-  if isinstance(x, (np.ndarray, jax.core.Tracer, xc.ArrayImpl)):  # pylint: disable=isinstance-second-argument-not-valid-type
+  if isinstance(x, (np.ndarray, jax.Array)):  # pylint: disable=isinstance-second-argument-not-valid-type
     return False
 
   try:
