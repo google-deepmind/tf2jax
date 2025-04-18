@@ -23,7 +23,6 @@ from jax import export
 import jax.extend as jex
 from jax.interpreters import mlir
 from jax.interpreters import xla
-from jax.lib import xla_client as xc
 from jax.lib import xla_extension
 import jax.numpy as jnp
 
@@ -173,18 +172,11 @@ def refine_polymorphic_shapes(
   Returns:
     The refined module.
   """
-  if xc.mlir_api_version >= 53:
-    refined_module_str = xla_extension.mlir.refine_polymorphic_shapes(
-        mlir.module_to_bytecode(module),
-        enable_shape_assertions=validate_static_shapes,
-        validate_static_shapes=validate_static_shapes,
-    )
-  elif xc.mlir_api_version >= 50:
-    refined_module_str = xla_extension.mlir.refine_polymorphic_shapes(
-        mlir.module_to_bytecode(module)
-    )
-  else:
-    raise NotImplementedError("refine_polymorphic_shapes needs jaxlib 0.4.12")
+  refined_module_str = xla_extension.mlir.refine_polymorphic_shapes(
+      mlir.module_to_bytecode(module),
+      enable_shape_assertions=validate_static_shapes,
+      validate_static_shapes=validate_static_shapes,
+  )
 
   context = mlir.make_ir_context()
   with context:
@@ -198,16 +190,10 @@ def mhlo_apply_lowering(
   program_name = f"_tf2jax_mhlo_apply_fn_{module.fun_name}"
   mhlo_module = ir.Module.parse(module.module)
 
-  if xc.mlir_api_version < 41:
-    callee_name = mlir.merge_mhlo_modules(
-        dst_module=ctx.module_context.module,
-        sym_name=program_name,
-        src_module=mhlo_module)  # type: ignore
-  else:
-    callee_name = mlir.merge_mlir_modules(
-        dst_module=ctx.module_context.module,
-        sym_name=program_name,
-        src_module=mhlo_module)
+  callee_name = mlir.merge_mlir_modules(
+      dst_module=ctx.module_context.module,
+      sym_name=program_name,
+      src_module=mhlo_module)
 
   symtab = ir.SymbolTable(ctx.module_context.module.operation)
   result_types = symtab[program_name].type.results
