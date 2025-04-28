@@ -75,7 +75,7 @@ def is_poly_dim(x) -> bool:
     return export.is_symbolic_dim(x)
 
   # This should reflect is_poly_dim() at
-  # https://github.com/google/jax/blob/main/jax/experimental/jax2tf/shape_poly.py#L676
+  # https://github.com/jax-ml/jax/blob/main/jax/experimental/jax2tf/shape_poly.py#L676
   # Array types.
   if isinstance(x, (np.ndarray, jax.Array)):  # pylint: disable=isinstance-second-argument-not-valid-type
     return False
