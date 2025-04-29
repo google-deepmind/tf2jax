@@ -29,6 +29,7 @@ import numpy as np
 import tensorflow as tf
 from tf2jax._src import config
 from tf2jax._src import numpy_compat as anp
+from tf2jax._src import utils
 from tf2jax._src import xla_utils
 
 
@@ -38,7 +39,7 @@ ArrayLike = Union[np.ndarray, jnp.ndarray]
 _EMPTY_RETURN_OP_NAME = "__NO_RETURN__"
 _EMPTY_RETURN_VALUE = object()
 
-safe_zip = jax.util.safe_zip
+safe_zip = utils.safe_zip
 
 
 def _check_attrs(proto, expected: Set[str]):

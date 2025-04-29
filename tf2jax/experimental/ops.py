@@ -29,6 +29,7 @@ from jaxlib.mlir.dialects import stablehlo as hlo
 
 from tf2jax._src import config
 from tf2jax._src import ops
+from tf2jax._src import utils
 from tf2jax.experimental import mhlo
 
 
@@ -104,7 +105,7 @@ def _refine_with_static_input_shapes(
 
     with ir.InsertionPoint(entry_block):
       orig_main_args: List[ir.Value] = []
-      for new_arg, orig_arg_type in jax.util.safe_zip(
+      for new_arg, orig_arg_type in utils.safe_zip(
           new_main_op.arguments, orig_main.type.inputs
       ):
         # TODO(shaobohou) Why is the ConvertOp needed?

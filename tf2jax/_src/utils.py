@@ -14,7 +14,9 @@
 # ==============================================================================
 """Util functions."""
 
+import functools
 import inspect
+import sys
 
 
 def fullargspec_to_signature(fullargspec) -> inspect.Signature:
@@ -46,3 +48,15 @@ def fullargspec_to_signature(fullargspec) -> inspect.Signature:
   signature = inspect.Signature(parameters)
 
   return signature
+
+
+if sys.version_info >= (3, 10):
+  safe_zip = functools.partial(zip, strict=True)
+else:
+
+  def safe_zip(*args):
+    args = list(map(list, args))
+    n = len(args[0])
+    for arg in args[1:]:
+      assert len(arg) == n, f"length mismatch: {list(map(len, args))}"
+    return list(zip(*args))

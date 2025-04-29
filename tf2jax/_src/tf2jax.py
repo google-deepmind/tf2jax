@@ -48,7 +48,7 @@ except ImportError:
 ArrayLike = ops.ArrayLike
 SpecTree = Union[tf.TensorSpec, Iterable["SpecTree"], Mapping[str, "SpecTree"]]
 
-safe_zip = jax.util.safe_zip
+safe_zip = utils.safe_zip
 
 
 class AnnotatedFunction:

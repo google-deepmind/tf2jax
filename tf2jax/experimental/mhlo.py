@@ -17,7 +17,6 @@
 import dataclasses
 from typing import Tuple
 
-import jax
 from jax import core
 from jax import export
 import jax.extend as jex
@@ -29,8 +28,10 @@ import jax.numpy as jnp
 from jaxlib.mlir import ir
 from jaxlib.mlir.dialects import func
 
+from tf2jax._src import utils
 
-safe_zip = jax.util.safe_zip
+
+safe_zip = utils.safe_zip
 
 mhlo_apply_p = jex.core.Primitive("mhlo_apply")
 mhlo_apply_p.multiple_results = True

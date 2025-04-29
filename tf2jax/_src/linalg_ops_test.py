@@ -27,6 +27,7 @@ import numpy as np
 import tensorflow as tf
 from tf2jax._src import test_util
 from tf2jax._src import tf2jax
+from tf2jax._src import utils
 import tree
 
 
@@ -57,7 +58,7 @@ class OpsTest(test_util.TestCase):
     tf_results = tf_func(*inputs)
 
     # Check outputs
-    for tf_res, jax_res in jax.util.safe_zip(
+    for tf_res, jax_res in utils.safe_zip(
         tree.flatten(tf_results), tree.flatten(jax_results)
     ):
       self.assertEqual(tf_res.shape, jax_res.shape)
