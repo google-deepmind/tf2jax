@@ -2545,7 +2545,9 @@ def _xla_sharding(proto):
 
   sharding = xla_client.OpSharding()
   sharding.ParseFromString(sharding_str)
-  jax_sharding = jax.sharding.GSPMDSharding(jax.devices(), sharding)
+  # TODO(shaobohou): Replace with jax.sharding.NamedSharding as GSPMDSharding is
+  # deprecated.
+  jax_sharding = jax._src.sharding_impls.GSPMDSharding(jax.devices(), sharding)  # pylint: disable=protected-access
 
   # TODO(b/235450851) Remove jax.jit once wsc is usable outside of jit.
   @jax.jit
