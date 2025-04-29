@@ -71,7 +71,7 @@ CHECK_CUSTOM_CALLS_TEST=0 pytest -n "${N_JOBS}" --pyargs tf2jax
 pip uninstall --yes tensorflow
 pip install tf-nightly
 pip install git+https://github.com/google/jax.git
-pip install -U --pre jaxlib -f https://storage.googleapis.com/jax-releases/jaxlib_nightly_releases.html
+pip install -U --pre jaxlib -i https://us-python.pkg.dev/ml-oss-artifacts-published/jax/simple/
 CHECK_CUSTOM_CALLS_TEST=0  pytest -n "${N_JOBS}" --pyargs tf2jax._src.roundtrip_test
 cd ..
 
