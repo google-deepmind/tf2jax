@@ -886,7 +886,7 @@ def _infer_relu_from_jax2tf(nodes):
       else:
         const_arg = cast_or_const_arg
 
-      if const_arg.op == "Const" and const_arg((), rng=None)[0].tolist() == 0:
+      if const_arg.op == "Const" and const_arg((), rng=None)[0].tolist() == 0:  # pytype: disable=wrong-arg-types
         # Replace the Maximum op with a Relu op, but keep the node name.
         # The Cast and Const ops may now be redundant but are kept anyway.
         node.op = "Relu"
