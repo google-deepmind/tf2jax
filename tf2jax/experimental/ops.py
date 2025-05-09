@@ -146,6 +146,7 @@ def _xla_call_module(proto):
           "platforms",
           "has_token_input_output",
           "disabled_checks",
+          "use_shardy_partitioner",
       },
   )
 
