@@ -20,7 +20,7 @@ from absl import flags
 from absl.testing import absltest
 from absl.testing import parameterized
 import chex
-import haiku as hk
+from flax import linen as nn
 import jax
 from jax.experimental import jax2tf
 import jax.numpy as jnp
@@ -157,15 +157,21 @@ class Jax2TfTest(test_util.TestCase):
   def test_mlp(self, with_grad, with_custom_grad):
     np.random.seed(42)
 
-    def forward(x):
-      mlp = hk.nets.MLP([300, 100, 10])
-      return mlp(x)
+    class MLP(nn.Module):
+      features: list[int]
+
+      @nn.compact
+      def __call__(self, x):
+        for i, feat in enumerate(self.features):
+          x = nn.Dense(features=feat)(x)
+          if i != len(self.features) - 1:
+            x = nn.relu(x)
+        return x
 
     inputs = np.random.normal(size=(8, 28 * 28))
-    forward = hk.transform(forward)
-    variables = forward.init(jax.random.PRNGKey(42), jnp.zeros_like(inputs))
-    variables = hk.data_structures.to_mutable_dict(variables)
-    jax_fn = hk.without_apply_rng(forward).apply
+    forward = MLP(features=[300, 100, 10])
+    variables = forward.init(jax.random.key(42), jnp.zeros_like(inputs))
+    jax_fn = forward.apply
     self._test_convert(
         jax_fn,
         [variables, inputs],
@@ -184,21 +190,29 @@ class Jax2TfTest(test_util.TestCase):
   def test_batch_norm(self, with_grad, with_custom_grad):
     np.random.seed(42)
 
-    def forward(x):
-      batch_norm = hk.BatchNorm(True, True, 0.9, eps=0.1)
-      return batch_norm(x, is_training=True)
+    class BatchNormModule(nn.Module):
+      @nn.compact
+      def __call__(self, x):
+        return nn.BatchNorm(
+            use_running_average=False,
+            momentum=0.9,
+            epsilon=0.1,
+            use_bias=True,
+            use_scale=True,
+        )(x)
 
     inputs = np.random.normal(size=(8, 17))
-    forward = hk.transform_with_state(forward)
-    variables, states = forward.init(
-        jax.random.PRNGKey(42), jnp.zeros_like(inputs)
-    )
-    variables = hk.data_structures.to_mutable_dict(variables)
-    states = hk.data_structures.to_mutable_dict(states)
+    forward = BatchNormModule()
+    initial_vars = forward.init(jax.random.key(42), jnp.zeros_like(inputs))
+    variables, states = initial_vars["params"], initial_vars["batch_stats"]
 
-    def jax_fn(params, states, x):
-      outputs, states = hk.without_apply_rng(forward).apply(params, states, x)
-      return outputs, hk.data_structures.to_mutable_dict(states)
+    def jax_fn(params, batch_stats, x):
+      outputs, updated_vars = forward.apply(
+          {"params": params, "batch_stats": batch_stats},
+          x,
+          mutable=["batch_stats"],
+      )
+      return outputs, updated_vars["batch_stats"]
 
     # Perturb variables and states.
     variables = tree.map_structure(
@@ -227,17 +241,17 @@ class Jax2TfTest(test_util.TestCase):
 
     tols = dict(rtol=1e-5) if jax.default_backend().lower() == "gpu" else {}
 
-    def forward(x):
-      conv = hk.Conv2D(
-          output_channels=7, kernel_shape=3, stride=1, padding="SAME"
-      )
-      return conv(x)
+    class Conv2DModule(nn.Module):
+      @nn.compact
+      def __call__(self, x):
+        return nn.Conv(
+            features=7, kernel_size=(3, 3), strides=(1, 1), padding="SAME"
+        )(x)
 
     inputs = np.random.normal(size=(8, 28, 28, 3))
-    forward = hk.transform(forward)
-    variables = forward.init(jax.random.PRNGKey(42), jnp.zeros_like(inputs))
-    variables = hk.data_structures.to_mutable_dict(variables)
-    jax_fn = hk.without_apply_rng(forward).apply
+    forward = Conv2DModule()
+    variables = forward.init(jax.random.key(42), jnp.zeros_like(inputs))
+    jax_fn = forward.apply
     self._test_convert(
         jax_fn, [variables, inputs], with_grad=with_grad, grad_tols=tols
     )
@@ -262,24 +276,25 @@ class Jax2TfTest(test_util.TestCase):
         lhs_spec=(0, 3, 1, 2), rhs_spec=(3, 2, 0, 1), out_spec=(0, 3, 1, 2)
     )
 
-    def forward(x):
-      return jax.lax.conv_general_dilated(
-          x,
-          rhs=kernels,
-          window_strides=(1, 1),
-          padding="SAME",
-          lhs_dilation=(1, 1),
-          rhs_dilation=(1, 1),
-          dimension_numbers=dimension_numbers,
-          **group_counts,
-      )
+    class XLAConvModule(nn.Module):
+      @nn.compact
+      def __call__(self, x):
+        return jax.lax.conv_general_dilated(
+            x,
+            rhs=kernels,
+            window_strides=(1, 1),
+            padding="SAME",
+            lhs_dilation=(1, 1),
+            rhs_dilation=(1, 1),
+            dimension_numbers=dimension_numbers,
+            **group_counts,
+        )
 
     feature_dim = 3 * group_counts.get("feature_group_count", 1)
     inputs = np.random.normal(size=(8, 28, 28, feature_dim))
-    forward = hk.transform(forward)
-    variables = forward.init(jax.random.PRNGKey(42), jnp.zeros_like(inputs))
-    variables = hk.data_structures.to_mutable_dict(variables)
-    jax_fn = hk.without_apply_rng(forward).apply
+    forward = XLAConvModule()
+    variables = forward.init(jax.random.key(42), jnp.zeros_like(inputs))
+    jax_fn = forward.apply
     self._test_convert(jax_fn, [variables, inputs], with_grad=with_grad)
 
   @chex.variants(with_jit=True)

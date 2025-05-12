@@ -15,7 +15,7 @@
 """Tests for JAX -> TF -> JAX with partitioning."""
 
 from absl.testing import absltest
-import haiku as hk
+from flax import linen as nn
 import jax
 from jax.experimental import jax2tf
 import jax.numpy as jnp
@@ -26,21 +26,24 @@ from tf2jax._src import tf2jax
 import tree
 
 
-def _net(x):
-  y = hk.Conv2D(32, kernel_shape=3, name='A1')(x)
-  y = hk.Conv2D(32, kernel_shape=3, name='A2')(y)
-  return y
+class FlaxNet(nn.Module):
+
+  @nn.compact
+  def __call__(self, x):
+    y = nn.Conv(features=32, kernel_size=(3, 3), name='A1')(x)
+    y = nn.Conv(features=32, kernel_size=(3, 3), name='A2')(y)
+    return y
 
 
 def _get_param_pspecs():
   return {
       'A1': {
-          'b': jax.sharding.PartitionSpec('model'),
-          'w': jax.sharding.PartitionSpec(None, None, None, 'model'),
+          'bias': jax.sharding.PartitionSpec('model'),
+          'kernel': jax.sharding.PartitionSpec(None, None, None, 'model'),
       },
       'A2': {
-          'b': jax.sharding.PartitionSpec(None),
-          'w': jax.sharding.PartitionSpec(None, None, 'model', None),
+          'bias': jax.sharding.PartitionSpec(None),
+          'kernel': jax.sharding.PartitionSpec(None, None, 'model', None),
       },
   }
 
@@ -52,13 +55,15 @@ class ShardingTest(test_util.TestCase):
       self.skipTest('Only run sharding tests on TPU.')
 
     # Set up network and inputs.
-    transformed = hk.without_apply_rng(hk.transform(_net))
-    rng = jax.random.PRNGKey(42)
+    transformed = FlaxNet()
+    rng = jax.random.key(42)
     images = jax.random.normal(rng, [2, 16, 16, 3])
     grad_tols = dict(rtol=1e-4)
 
     # Init params.
-    params = jax.jit(transformed.init)(rng, images)
+    variables = jax.jit(transformed.init)(rng, images)
+    params = variables['params']  # Extract the parameters
+    transformed_apply = lambda p, x: transformed.apply({'params': p}, x)
 
     # Partitioned to 8 devices.
     assert jax.device_count() == 8, jax.device_count()
@@ -71,20 +76,20 @@ class ShardingTest(test_util.TestCase):
       return jax.tree.map(lambda x: jax.sharding.NamedSharding(mesh, x), pspecs)
 
     partitioned_apply = jax.jit(
-        transformed.apply,
+        transformed_apply,
         in_shardings=to_xla_sharding(
             (params_pspecs, jax.sharding.PartitionSpec('data'))
         ),
     )
     self.assertAllClose(
-        jax.jit(transformed.apply)(params, images),
+        jax.jit(transformed_apply)(params, images),
         partitioned_apply(params, images),
     )
 
     # Check gradients.
     @jax.grad
     def unpartitioned_grad(params, xs):
-      return jnp.sum(jax.jit(transformed.apply)(params, xs))
+      return jnp.sum(jax.jit(transformed_apply)(params, xs))
 
     @jax.grad
     def partitioned_grad(params, xs):
@@ -115,10 +120,10 @@ class ShardingTest(test_util.TestCase):
         inputs=np.zeros_like(images),
     )
     self.assertAllClose(
-        transformed.apply(params, images), jax_fn(params, images)
+        transformed_apply(params, images), jax_fn(params, images)
     )
     self.assertAllClose(
-        jax.jit(transformed.apply)(params, images),
+        jax.jit(transformed_apply)(params, images),
         jax.jit(jax_fn)(params, images),
     )
 
@@ -134,7 +139,7 @@ class ShardingTest(test_util.TestCase):
     )
 
     # Check shardings.
-    unpartitioned_output = jax.jit(transformed.apply)(params, images)
+    unpartitioned_output = jax.jit(transformed_apply)(params, images)
     self.assertLen(unpartitioned_output.devices(), 1)
     partitioned_output = partitioned_apply(params, images)
     self.assertLen(partitioned_output.devices(), 8)

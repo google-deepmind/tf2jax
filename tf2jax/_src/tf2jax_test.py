@@ -19,7 +19,7 @@ import inspect
 from absl.testing import parameterized
 
 import chex
-import haiku as hk
+from flax import linen as nn
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -235,25 +235,20 @@ class FeaturesTest(tf.test.TestCase, parameterized.TestCase):
     np_inputs = np.array(42.0, np.float32)
     tf_outputs = tf_func(np_inputs)
 
-    class CachedFn(hk.Module):
-
+    class CachedFn(nn.Module):
       cache = []
 
-      def __init__(self):
-        super().__init__(name=None)
+      @nn.compact
+      def __call__(self, x):
         if not self.cache:
           with config.override_config("force_const_float32_to_bfloat16", True):
             self.cache.append(jax.jit(
                 tf2jax.convert_functional(tf_func, np_inputs)))
-
-      def __call__(self, x):
         return self.cache[0](x)
 
-    def call_cached_fn(x):
-      return CachedFn()(x)
+    cached_fn = CachedFn()
 
-    cached_fn = hk.without_apply_rng(hk.transform(call_cached_fn))
-    params = self.variant(cached_fn.init)(jax.random.PRNGKey(42), np_inputs)
+    params = self.variant(cached_fn.init)(jax.random.key(42), np_inputs)
     jax_inputs = jnp.asarray(np_inputs, jnp.bfloat16)
     jax_outputs = self.variant(cached_fn.apply)(params, jax_inputs)
 
