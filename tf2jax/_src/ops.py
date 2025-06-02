@@ -16,15 +16,15 @@
 
 import dataclasses
 import functools
-from typing import Any, Callable, List, Optional, Mapping, Protocol, Sequence, Set, Tuple, Union
+from typing import Any, Callable, List, Mapping, Optional, Protocol, Sequence, Set, Tuple, Union
 
 from absl import logging
-
 import jax
 from jax.experimental import checkify
 import jax.extend as jex
 from jax.lib import xla_client
 import jax.numpy as jnp
+import jax.scipy.special
 import numpy as np
 import tensorflow as tf
 from tf2jax._src import config
@@ -107,6 +107,8 @@ _jax_ops = {
         functools.partial(jnp.fft.fftn, axes=(-1,)), {"Tcomplex"}),
     "FFT2D": _get_jax_op(
         functools.partial(jnp.fft.fftn, axes=(-2, -1,)), {"Tcomplex"}),
+    "FresnelCos": _get_jax_op(lambda x: jax.scipy.special.fresnel(x)[1], {"T"}),
+    "FresnelSin": _get_jax_op(lambda x: jax.scipy.special.fresnel(x)[0], {"T"}),
     "FFT3D": _get_jax_op(
         functools.partial(jnp.fft.fftn, axes=(-3, -2, -1,)), {"Tcomplex"}),
     "Floor": _get_jax_op(jnp.floor, {"T"}),

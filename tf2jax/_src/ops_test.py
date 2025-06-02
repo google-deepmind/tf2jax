@@ -47,18 +47,21 @@ class OpsTest(test_util.TestCase):
     jitted = self.variant.type == chex.ChexVariantType.WITH_JIT
     return self.assertRaises(err) if jitted else contextlib.nullcontext()
 
-  def _test_convert(self,
-                    tf_func,
-                    inputs,
-                    *,
-                    check_shape_only=False,
-                    functional=True,
-                    atol=1e-5):
+  def _test_convert(
+      self,
+      tf_func,
+      inputs,
+      *,
+      check_shape_only=False,
+      functional=True,
+      jit_compile=True,
+      atol=1e-5,
+  ):
     if not isinstance(inputs, (list, tuple)):
       inputs = (inputs,)
 
     if not hasattr(tf_func, "get_concrete_function"):
-      tf_func = tf.function(tf_func, jit_compile=True)
+      tf_func = tf.function(tf_func, jit_compile=jit_compile)
 
     jax_func, jax_params = tf2jax.convert(
         tf_func, *tree.map_structure(np.zeros_like, inputs))
@@ -146,6 +149,20 @@ class OpsTest(test_util.TestCase):
     def tf_func(x):
       return getattr(tf.raw_ops, op_name)(x=x)
     self._test_convert(tf_func, inputs)
+
+  @chex.variants(with_jit=True, without_jit=True)
+  @parameterized.parameters(
+      "FresnelCos",
+      "FresnelSin",
+  )
+  def test_unary_numerics_not_xla_compatible(self, op_name):
+    np.random.seed(42)
+    inputs = np.random.normal(size=(10, 5)).astype(np.float32)
+
+    def tf_func(x):
+      return getattr(tf.raw_ops, op_name)(x=x)
+
+    self._test_convert(tf_func, inputs, jit_compile=False)
 
   @chex.variants(with_jit=True, without_jit=True)
   @parameterized.parameters("Abs", "Sign")
