@@ -2540,13 +2540,18 @@ def _xla_sharding(proto):
     raise ValueError(f"{unspecified_dims=} is not yet supported.")
 
   sharding_str = proto.attr["sharding"].s
+  sharding_v2 = proto.attr["_XlaShardingV2"]
 
   # Return identity if sharding annotation is empty.
   if not sharding_str:
     return lambda x: x
 
   sharding = xla_client.OpSharding()
-  sharding.ParseFromString(sharding_str)
+  if sharding_v2:
+    sharding.ParseFromString(sharding_v2.s)
+  else:
+    sharding.ParseFromString(sharding_str)
+
   # TODO(shaobohou): Replace with jax.sharding.NamedSharding as GSPMDSharding is
   # deprecated.
   jax_sharding = jax._src.sharding_impls.GSPMDSharding(jax.devices(), sharding)  # pylint: disable=protected-access
