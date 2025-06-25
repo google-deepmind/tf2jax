@@ -200,8 +200,8 @@ def mhlo_apply_lowering(
   result_types = symtab[program_name].type.results
 
   # Paranoid checks.
-  assert len(mlir.flatten_lowering_ir_args(args)) == len(args), (
-      len(mlir.flatten_lowering_ir_args(args)),
+  assert len(mlir.flatten_ir_values(args)) == len(args), (
+      len(mlir.flatten_ir_values(args)),
       len(args),
   )
 
