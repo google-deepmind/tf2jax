@@ -22,6 +22,7 @@ from absl import logging
 import jax
 from jax.experimental import checkify
 import jax.extend as jex
+from jax.extend import sharding as jex_sharding
 from jax.lib import xla_client
 import jax.numpy as jnp
 import jax.scipy.special
@@ -2549,7 +2550,7 @@ def _xla_sharding(proto):
   sharding.ParseFromString(sharding_str)
   # TODO(shaobohou): Replace with jax.sharding.NamedSharding as GSPMDSharding is
   # deprecated.
-  jax_sharding = jax._src.sharding_impls.GSPMDSharding(jax.devices(), sharding)  # pylint: disable=protected-access
+  jax_sharding = jex_sharding.GSPMDSharding(jax.devices(), sharding)
 
   # TODO(b/235450851) Remove jax.jit once wsc is usable outside of jit.
   @jax.jit
