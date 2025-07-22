@@ -23,7 +23,6 @@ import jax
 from jax.experimental import checkify
 import jax.extend as jex
 from jax.extend import sharding as jex_sharding
-from jax.lib import xla_client
 import jax.numpy as jnp
 import jax.scipy.special
 import numpy as np
@@ -32,7 +31,6 @@ from tf2jax._src import config
 from tf2jax._src import numpy_compat as anp
 from tf2jax._src import utils
 from tf2jax._src import xla_utils
-
 
 ArrayLike = Union[np.ndarray, jnp.ndarray]
 
@@ -2547,11 +2545,10 @@ def _xla_sharding(proto):
   if not sharding_str:
     return lambda x: x
 
-  sharding = xla_client.OpSharding()
   if sharding_v2 and sharding_v2.s:
-    sharding.ParseFromString(sharding_v2.s)
+    sharding = jex_sharding.get_op_sharding_from_serialized_proto(sharding_v2.s)
   else:
-    sharding.ParseFromString(sharding_str)
+    sharding = jex_sharding.get_op_sharding_from_serialized_proto(sharding_str)
 
   # TODO(shaobohou): Replace with jax.sharding.NamedSharding as GSPMDSharding is
   # deprecated.
