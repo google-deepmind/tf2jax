@@ -20,8 +20,8 @@ from typing import List, Tuple
 from absl import logging
 
 import jax
+import jax.extend as jex
 from jax.interpreters import mlir
-from jax.lib import xla_extension
 import jax.numpy as jnp
 from jaxlib.mlir import ir
 from jaxlib.mlir.dialects import func
@@ -227,7 +227,7 @@ def _xla_call_module(proto):
       return target_platforms.index(jax_backend)
 
   if version >= 4:
-    mhlo_text = xla_extension.mlir.deserialize_portable_artifact(
+    mhlo_text = jex.mlir.deserialize_portable_artifact(
         proto.attr["module"].s
     )
   else:

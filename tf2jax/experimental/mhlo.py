@@ -22,7 +22,6 @@ from jax import export
 import jax.extend as jex
 from jax.interpreters import mlir
 from jax.interpreters import xla
-from jax.lib import xla_extension
 import jax.numpy as jnp
 
 from jaxlib.mlir import ir
@@ -173,7 +172,7 @@ def refine_polymorphic_shapes(
   Returns:
     The refined module.
   """
-  refined_module_str = xla_extension.mlir.refine_polymorphic_shapes(
+  refined_module_str = jex.mlir.refine_polymorphic_shapes(
       mlir.module_to_bytecode(module),
       enable_shape_assertions=validate_static_shapes,
       validate_static_shapes=validate_static_shapes,
