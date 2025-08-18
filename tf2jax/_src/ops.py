@@ -2198,7 +2198,7 @@ def _svd(proto):
 @register_operation("TensorListGetItem")
 def _tensor_list_get_item(proto):
   """Parse an TensorListGetItem Op."""
-  _check_attrs(proto, {"element_dtype"})
+  _check_attrs(proto, {"Tshape", "element_dtype"})
 
   dtype = tf.as_dtype(proto.attr["element_dtype"].type)
   dtype = anp.get_jax_dtype(dtype)
