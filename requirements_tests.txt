@@ -1,4 +1,4 @@
 chex==0.1.89
 flax==0.10.6
-tensorflow==2.19.0; sys_platform != 'darwin' or platform_machine != 'arm64'
-tensorflow-macos==2.19.0; sys_platform == 'darwin' and platform_machine == 'arm64'
+tensorflow==2.20.0; sys_platform != 'darwin' or platform_machine != 'arm64'
+tensorflow-macos==2.20.0; sys_platform == 'darwin' and platform_machine == 'arm64'

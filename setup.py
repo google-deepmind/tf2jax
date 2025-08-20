@@ -58,7 +58,7 @@ setup(
         os.path.join(_CURRENT_DIR, 'requirements_tests.txt')),
     zip_safe=False,  # Required for full installation.
     include_package_data=True,
-    python_requires='>=3.7',
+    python_requires='>=3.11',
     classifiers=[
         'Development Status :: 4 - Beta',
         'Intended Audience :: Developers',
@@ -66,7 +66,6 @@ setup(
         'Intended Audience :: Science/Research',
         'License :: OSI Approved :: Apache Software License',
         'Operating System :: OS Independent',
-        'Programming Language :: Python :: 3.10',
         'Programming Language :: Python :: 3.11',
         'Topic :: Scientific/Engineering :: Artificial Intelligence',
         'Topic :: Scientific/Engineering :: Mathematics',
