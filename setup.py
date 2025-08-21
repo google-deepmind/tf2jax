@@ -46,16 +46,18 @@ setup(
     url='https://github.com/deepmind/tf2jax',
     license='Apache 2.0',
     author='DeepMind',
-    description=('TF2JAX: Convert TensorFlow to JAX'),
+    description='TF2JAX: Convert TensorFlow to JAX',
     long_description=open(os.path.join(_CURRENT_DIR, 'README.md')).read(),
     long_description_content_type='text/markdown',
     author_email='tf2jax-dev@google.com',
     keywords='jax tensorflow conversion translate',
     packages=find_packages(exclude=['*_test.py']),
     install_requires=_parse_requirements(
-        os.path.join(_CURRENT_DIR, 'requirements.txt')),
+        os.path.join(_CURRENT_DIR, 'requirements.txt')
+    ),
     tests_require=_parse_requirements(
-        os.path.join(_CURRENT_DIR, 'requirements_tests.txt')),
+        os.path.join(_CURRENT_DIR, 'requirements_tests.txt')
+    ),
     zip_safe=False,  # Required for full installation.
     include_package_data=True,
     python_requires='>=3.11',
@@ -67,6 +69,7 @@ setup(
         'License :: OSI Approved :: Apache Software License',
         'Operating System :: OS Independent',
         'Programming Language :: Python :: 3.11',
+        'Programming Language :: Python :: 3.12',
         'Topic :: Scientific/Engineering :: Artificial Intelligence',
         'Topic :: Scientific/Engineering :: Mathematics',
         'Topic :: Software Development :: Libraries :: Python Modules',

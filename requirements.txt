@@ -1,7 +1,7 @@
 absl-py
 dm-tree>=0.1.5
-jax>=0.7.0
-jaxlib>=0.7.0
+jax>=0.7.1
+jaxlib>=0.7.1
 numpy>=1.23.0
 tensorflow>=2.20.0; sys_platform != 'darwin' or platform_machine != 'arm64'
 tensorflow-macos>=2.20.0; sys_platform == 'darwin' and platform_machine == 'arm64'
