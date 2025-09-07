@@ -26,6 +26,9 @@ from tf2jax._src.tf2jax import convert_functional
 from tf2jax._src.tf2jax import convert_functional_from_restored
 
 from tf2jax._src.tf2jax import MissingInputError
+from tf2jax._src.tf2jax import ConversionError
+from tf2jax._src.tf2jax import UnsupportedOperationError
+from tf2jax._src.tf2jax import ShapeMismatchError
 
 __version__ = "0.3.9"
 

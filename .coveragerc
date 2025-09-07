@@ -1,0 +1,25 @@
+[run]
+source = tf2jax
+omit = 
+    */test*
+    */tests/*
+    */_test.py
+    */__pycache__/*
+    */experimental/*
+    setup.py
+
+[report]
+exclude_lines =
+    pragma: no cover
+    def __repr__
+    if self.debug:
+    if settings.DEBUG
+    raise AssertionError
+    raise NotImplementedError
+    if 0:
+    if __name__ == .__main__.:
+    class .*\bProtocol\):
+    @(abc\.)?abstractmethod
+
+[html]
+directory = htmlcov

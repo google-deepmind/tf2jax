@@ -16,13 +16,51 @@ jobs:
     strategy:
       matrix:
         python-version: ["3.11", "3.12"]
-        os: [ubuntu-latest]
+        os: [ubuntu-latest, macos-latest]
 
     steps:
-      - uses: "actions/checkout@v2"
-      - uses: "actions/setup-python@v1"
+      - name: Checkout code
+        uses: "actions/checkout@v4"
+        
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: "actions/setup-python@v5"
         with:
-            python-version: "${{ matrix.python-version }}"
-      - name: Run CI tests
-        run: bash test.sh
-        shell: bash
+          python-version: "${{ matrix.python-version }}"
+          
+      - name: Cache pip dependencies
+        uses: "actions/cache@v4"
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements*.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+            
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          pip install -r requirements.txt
+          pip install -r requirements_tests.txt
+          
+      - name: Run linting
+        run: |
+          flake8 `find tf2jax -name '*.py' | xargs` --count --select=E9,F63,F7,F82,E225,E251 --show-source --statistics
+          
+      - name: Run tests with coverage
+        run: |
+          mkdir _testing && cd _testing
+          if [ "$(uname)" == "Darwin" ]; then
+            N_JOBS=$(sysctl -n hw.logicalcpu)
+          else
+            N_JOBS=$(grep -c ^processor /proc/cpuinfo)
+          fi
+          CHECK_CUSTOM_CALLS_TEST=0 pytest -n "${N_JOBS}" --cov=tf2jax --cov-report=xml --cov-report=term-missing --pyargs tf2jax
+          cd ..
+          
+      - name: Upload coverage to Codecov
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11'
+        uses: "codecov/codecov-action@v4"
+        with:
+          file: ./_testing/coverage.xml
+          flags: unittests
+          name: codecov-umbrella
+          fail_ci_if_error: false
