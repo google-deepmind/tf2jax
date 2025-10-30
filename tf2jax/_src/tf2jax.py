@@ -458,6 +458,25 @@ def _maybe_tracer_to_tf_spec(val: Any) -> Any:
     return val
 
 
+def _ndarray_or_empty(x: tf.Variable) -> np.ndarray:
+  """Returns a numpy array for the provided variable.
+
+  If we are not in eager mode, we cannot evaluate the variable, so we return an
+  empty array. It is assumed the caller is not going to use the variables in
+  this case and only needs to wrap the tf.function.
+
+  Args:
+    x: The variable to convert.
+
+  Returns:
+    A numpy array for the provided variable.
+  """
+  if tf.executing_eagerly():
+    return x.numpy()
+  else:
+    return np.empty(x.shape, x.dtype.as_numpy_dtype)
+
+
 def convert(
     tf_func: Any,  # tensorflow.python.eager.function is not visible.
     *args,
@@ -503,7 +522,9 @@ def convert(
   variable_map = {
       k: func_variables[v.ref()] for k, v in captures if v.dtype == tf.resource
   }
-  constants = {k: v.numpy() for k, v in captures if v.dtype != tf.resource}
+  constants = {
+      k: _ndarray_or_empty(v) for k, v in captures if v.dtype != tf.resource
+  }
 
   captured_input_names = tuple([
       v.op.name for v in concrete_func.inputs[num_flat_args:]
@@ -980,7 +1001,7 @@ def _convert(
     structured_outputs,
     captured_input_names: Optional[Tuple[str, ...]] = None,
     variable_map: Optional[Mapping[str, tf.Variable]] = None,
-    constants: Optional[Mapping[str, jnp.ndarray]] = None,
+    constants: Optional[Mapping[str, np.ndarray]] = None,
     library: Optional[Dict[str, _LibraryFunction]] = None,
 ) -> Tuple[Callable[..., Any], Mapping[str, Variable]]:
   """Convert a GraphDef to a Jax function.
@@ -999,7 +1020,7 @@ def _convert(
     constants: A mapping from tensor names to constant values. The keys are a
       subset of captured_input_names.
     library: A mapping from function names to Callable. This is non-empty on
-      recurisve calls if the FunctionDefLibrary in the GraphDef is non-empty.
+      recursive calls if the FunctionDefLibrary in the GraphDef is non-empty.
 
   Returns:
     A tuple: the first is a Jax functions that takes a flat parameter dict and a
@@ -1068,7 +1089,7 @@ def _convert(
     raise ValueError(err_message)
 
   # Extract variables.
-  if tf.executing_eagerly():
+  if tf.executing_eagerly() or tf.inside_function():
     # Uniqueify variables with identical names.
     variables_tf = {}
     var_name_by_ref = {}
@@ -1083,7 +1104,7 @@ def _convert(
       var_name_by_ref[v.ref()] = var_name
 
     variables = {
-        k: Variable(v.numpy(), v.trainable, v.name)
+        k: Variable(_ndarray_or_empty(v), v.trainable, v.name)
         for k, v in variables_tf.items()
     }
   else:
@@ -1468,7 +1489,7 @@ def _convert_gradient_function(
     if cap.dtype == tf.resource:
       variable_map[inp.op.name] = func_variables[cap.ref()]
       internal_capture_names.append(inp.op.name)
-    elif hasattr(cap, "numpy"):
+    elif hasattr(cap, "numpy") and tf.executing_eagerly():
       constant_map[inp.op.name] = cap.numpy()
       internal_capture_names.append(inp.op.name)
     else:

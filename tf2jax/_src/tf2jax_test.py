@@ -15,15 +15,16 @@
 """Tests tf2jax."""
 
 import inspect
+import tempfile
 
 from absl.testing import parameterized
-
 import chex
+import flax
 from flax import linen as nn
 import jax
 import jax.numpy as jnp
 import numpy as np
-
+import orbax.export
 import tensorflow as tf
 from tf2jax._src import config
 from tf2jax._src import tf2jax
@@ -61,6 +62,34 @@ class TestMLP(tf.Module):
     for layer in self.layers:
       x = layer(x)
     return x
+
+
+class FlaxTestDense(nn.Module):
+  """A Flax module that wraps a TestDense saved model."""
+
+  saved_model_path: str
+  input_dim: int
+
+  def setup(self):
+    self.m = tf.saved_model.load(self.saved_model_path)
+    if self.is_initializing():
+      _, params = tf2jax.convert(
+          tf.function(self.m.__call__),
+          tf.TensorSpec([None, self.input_dim], tf.float32),
+      )
+      params = flax.traverse_util.unflatten_dict(params, sep="/")
+      self.params = self.param("saved_model", lambda _: params)
+    else:
+      self.params = self.param("saved_model", lambda _: None)
+
+  def __call__(self, x: jax.Array) -> jax.Array:
+    fn, _ = tf2jax.convert(
+        tf.function(self.m.__call__),
+        tf.TensorSpec(x.shape, tf.float32),
+    )
+    params = flax.traverse_util.flatten_dict(self.params, sep="/")
+    y, _ = fn(params, x)
+    return y
 
 
 class FeaturesTest(tf.test.TestCase, parameterized.TestCase):
@@ -196,7 +225,8 @@ class FeaturesTest(tf.test.TestCase, parameterized.TestCase):
       chex.params_product(
           (("float32", tf.float32), ("float64", tf.float64)),
           named=True,
-      ))
+      )
+  )
   def test_force_bf16_consts(self, tf_dtype):
     @tf.function
     def tf_func(x):
@@ -205,9 +235,11 @@ class FeaturesTest(tf.test.TestCase, parameterized.TestCase):
     np_inputs = np.array(42.0, tf_dtype.as_numpy_dtype())
     tf_outputs = tf_func(np_inputs)
 
-    dtype_config_name = ("force_const_float32_to_bfloat16"
-                         if tf_dtype == tf.float32 else
-                         "force_const_float64_to_bfloat16")
+    dtype_config_name = (
+        "force_const_float32_to_bfloat16"
+        if tf_dtype == tf.float32
+        else "force_const_float64_to_bfloat16"
+    )
 
     # This is the default.
     with config.override_config(dtype_config_name, False):
@@ -215,8 +247,8 @@ class FeaturesTest(tf.test.TestCase, parameterized.TestCase):
     jax_func = self.variant(jax_func)
     orig_jax_outputs = jax_func(np_inputs)
     self.assertEqual(
-        jnp.array(np_inputs).dtype,
-        jnp.array(orig_jax_outputs).dtype)
+        jnp.array(np_inputs).dtype, jnp.array(orig_jax_outputs).dtype
+    )
     self.assertAllClose(tf_outputs, orig_jax_outputs)
 
     with config.override_config(dtype_config_name, True):
@@ -242,8 +274,9 @@ class FeaturesTest(tf.test.TestCase, parameterized.TestCase):
       def __call__(self, x):
         if not self.cache:
           with config.override_config("force_const_float32_to_bfloat16", True):
-            self.cache.append(jax.jit(
-                tf2jax.convert_functional(tf_func, np_inputs)))
+            self.cache.append(
+                jax.jit(tf2jax.convert_functional(tf_func, np_inputs))
+            )
         return self.cache[0](x)
 
     cached_fn = CachedFn()
@@ -276,7 +309,8 @@ class FeaturesTest(tf.test.TestCase, parameterized.TestCase):
       self.assertEqual(jax_func(13).shape, (13,))
       with self.assertRaisesRegex(
           TypeError,
-          "Shapes must be 1D sequences of concrete values of integer type"):
+          "Shapes must be 1D sequences of concrete values of integer type",
+      ):
         jax.jit(jax_func)(13)
       self.assertEqual(jax.jit(jax_func, static_argnums=0)(13).shape, (13,))
 
@@ -285,15 +319,18 @@ class FeaturesTest(tf.test.TestCase, parameterized.TestCase):
       chex.params_product(
           (("with_custom_gradient", True), ("without_custom_gradient", False)),
           named=True,
-      ))
+      )
+  )
   def test_custom_gradient(self, use_custom_gradient):
     @tf.function
     @tf.custom_gradient
     def tf_func(x):
       e = tf.exp(x)
+
       def grad(dy):
         # This is deliberately the wrong gradient.
         return dy * (1 - 1 / (1 + e)) * tf.sin(x) + 0.42
+
       return tf.reduce_sum(tf.math.log(1 + e)), grad
 
     np_inputs = np.array(range(6), dtype=np.float32).reshape(3, 2)
@@ -318,7 +355,7 @@ class FeaturesTest(tf.test.TestCase, parameterized.TestCase):
   @chex.variants(with_jit=True, without_jit=True)
   def test_trainable(self):
     can_train = tf.Variable(3.14, trainable=True, name="can_train")
-    not_train = tf.Variable(42., trainable=False, name="not_train")
+    not_train = tf.Variable(42.0, trainable=False, name="not_train")
 
     @tf.function
     def tf_func(x):
@@ -342,7 +379,8 @@ class FeaturesTest(tf.test.TestCase, parameterized.TestCase):
               ("keyword", ((), dict(x=3.14, y=42.0))),
           ),
           named=True,
-      ))
+      )
+  )
   def test_positional_and_keyword_args(self, all_args):
     @tf.function
     def tf_func(x, y):
@@ -364,11 +402,14 @@ class FeaturesTest(tf.test.TestCase, parameterized.TestCase):
               ("no_defaults", lambda *, kw0, kw1: kw0 + kw1),
               ("some_defaults", lambda *, kw0=3.14, kw1: kw0 + kw1),
               ("all_defaults", lambda *, kw0=3.14, kw1=42.0: kw0 + kw1),
-              ("all_defaults_some_used",
-               lambda *, kw0=3.14, kw1=42.0, kw2=2.8: kw0 + kw1 + kw2),
+              (
+                  "all_defaults_some_used",
+                  lambda *, kw0=3.14, kw1=42.0, kw2=2.8: kw0 + kw1 + kw2,
+              ),
           ),
           named=True,
-      ))
+      )
+  )
   def test_keyword_only(self, fn):
     tf_func = tf.function(fn)
 
@@ -376,7 +417,8 @@ class FeaturesTest(tf.test.TestCase, parameterized.TestCase):
     tf_outputs = tf_func(kw0=inputs[0], kw1=inputs[1])
 
     jax_func = tf2jax.convert_functional(
-        tf_func, kw0=np.zeros_like(inputs[0]), kw1=np.zeros_like(inputs[1]))
+        tf_func, kw0=np.zeros_like(inputs[0]), kw1=np.zeros_like(inputs[1])
+    )
     jax_outputs = self.variant(jax_func)(kw0=inputs[0], kw1=inputs[1])
 
     self.assertAllClose(tf_outputs, jax_outputs)
@@ -390,18 +432,20 @@ class FeaturesTest(tf.test.TestCase, parameterized.TestCase):
     y = np.zeros((10, 1), np.float32)
     z = np.zeros((), np.float32)
     jax_func = tf2jax.convert_functional(tf_func, x, y=y, z=z)
-    self.assertEqual(jax_func.structured_inputs, (
+    self.assertEqual(
+        jax_func.structured_inputs,
         (
-            tf.TensorSpec(shape=(10, 5), dtype=tf.float32, name="x"),
-            tf.TensorSpec(shape=(10, 1), dtype=tf.float32, name="y"),
+            (
+                tf.TensorSpec(shape=(10, 5), dtype=tf.float32, name="x"),
+                tf.TensorSpec(shape=(10, 1), dtype=tf.float32, name="y"),
+            ),
+            {"z": tf.TensorSpec(shape=(), dtype=tf.float32, name="z")},
         ),
-        {
-            "z": tf.TensorSpec(shape=(), dtype=tf.float32, name="z")
-        },
-    ))
+    )
     self.assertEqual(
         jax_func.structured_outputs,
-        tf.TensorSpec(shape=(10, 5), dtype=tf.float32, name="Identity"))
+        tf.TensorSpec(shape=(10, 5), dtype=tf.float32, name="Identity"),
+    )
 
     expected_sig = inspect.Signature([
         inspect.Parameter("x", inspect.Parameter.POSITIONAL_OR_KEYWORD),
@@ -422,14 +466,15 @@ class FeaturesTest(tf.test.TestCase, parameterized.TestCase):
       jax_fn = tf2jax.convert_functional(tf_fn, x)
       return jnp.sin(self.variant(jax_fn)(x))
 
-    inputs = np.linspace(-1., 1., 6, dtype=np.float32).reshape((2, 3))
+    inputs = np.linspace(-1.0, 1.0, 6, dtype=np.float32).reshape((2, 3))
     self.assertAllClose(tf.sin(tf_fn(inputs)), tf2jax_fn(inputs))
 
   @chex.variants(with_jit=True, without_jit=True)
   def test_non_unique_variable_names(self):
     model = TestMLP(input_size=5, sizes=[7, 8])
     self.assertNotEqual(
-        len(set([v.name for v in model.variables])), len(model.variables))
+        len(set([v.name for v in model.variables])), len(model.variables)
+    )
 
     @tf.function
     def forward(x):
@@ -493,6 +538,49 @@ class FeaturesTest(tf.test.TestCase, parameterized.TestCase):
         ValueError, r"Some parameters are missing, \[\'bbb\'\]."
     ):
       self.variant(jax_func)({"aaa": jax_params["aaa"]}, np_inputs)
+
+  def test_export_saved_model_export_jax_module(self):
+    input_dim = 5
+    l = TestDense(input_dim=input_dim, output_size=5)
+    l.__call__ = tf.function(
+        l.__call__, input_signature=[tf.TensorSpec((None, input_dim))]
+    )
+
+    x_tf = tf.ones((2, input_dim))
+    y_tf = l(x_tf)
+    kernel_tf, bias_tf = l.variables
+    tf_export_dir = tempfile.mkdtemp()
+    jax_export_dir = tempfile.mkdtemp()
+    tf.saved_model.save(l, tf_export_dir)
+
+    module = FlaxTestDense(tf_export_dir, input_dim=input_dim)
+    x_jax = jnp.ones((2, input_dim))
+    y_jax, jax_params = module.init_with_output(jax.random.key(0), x_jax)
+
+    kernel_jax, bias_jax = jax.tree.leaves(jax_params)
+
+    np.testing.assert_array_equal(kernel_tf.numpy(), kernel_jax)
+    np.testing.assert_array_equal(bias_tf.numpy(), bias_jax)
+    np.testing.assert_allclose(y_tf.numpy(), y_jax, atol=1e-6, rtol=1e-6)
+
+    def model_fn(params, inputs):  # The JAX model function to export.
+      fm = FlaxTestDense(tf_export_dir, input_dim=input_dim)
+      return fm.apply(params, inputs)
+
+    jax_module = orbax.export.JaxModule(jax_params, model_fn)
+    export_mgr = orbax.export.ExportManager(
+        jax_module,
+        [
+            orbax.export.ServingConfig(
+                "serving_default",
+                input_signature=[
+                    tf.TensorSpec(shape=[1, input_dim], dtype=tf.float32)
+                ],
+            ),
+        ],
+    )
+
+    export_mgr.save(jax_export_dir)
 
 
 if __name__ == "__main__":
