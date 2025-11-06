@@ -71,7 +71,7 @@ _NP_LIKES = (np.ndarray, np.number, np.bool_, bool, int, float, complex)
 def is_poly_dim(x) -> bool:
   """Checks if `x` is a symbolic dimension."""
   if jax.__version_info__ >= (0, 4, 30):
-    from jax import export  # pylint: disable=g-import-not-at-top  # pytype: disable=import-error
+    from jax import export  # pylint: disable=g-import-not-at-top,import-outside-toplevel  # pytype: disable=import-error
     return export.is_symbolic_dim(x)
 
   # This should reflect is_poly_dim() at
@@ -237,7 +237,7 @@ def sum_(arr, axis: Union[int, Sequence[int]], keepdims: bool):
 
 # Array manipulation ops.
 def broadcast_to(arr, shape):
-  np_ = jnp if any([is_poly_dim(x) for x in shape]) else _get_np(arr)
+  np_ = jnp if any(is_poly_dim(x) for x in shape) else _get_np(arr)
   return np_.broadcast_to(arr, shape)
 
 concatenate = lambda arrs, axis: _get_np(*arrs).concatenate(arrs, axis=axis)

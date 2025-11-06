@@ -1067,7 +1067,7 @@ class _IdentityN(_HigherOrderFunction):
       )
 
     def _warn_func(*operands: jnp.ndarray) -> Tuple[jnp.ndarray, ...]:
-      logging.warn(
+      logging.warning(
           "Ignored custom gradient `%s` on the node `%s` (op type: IdentityN).",
           self.gradient_op_type,
           self.name,
@@ -1867,7 +1867,7 @@ def _splitv(proto):
     assert size_splits.shape[0] == num_split, (size_splits.shape[0], num_split)
     splits = size_splits.tolist()
     axis = axis.item()
-    defined_size = sum([x for x in splits if x >= 0])
+    defined_size = sum(x for x in splits if x >= 0)
     splits = [x if x >= 0 else value.shape[axis] - defined_size for x in splits]
     indices = np.cumsum(np.array(splits), axis=0)
     assert indices[-1] == value.shape[axis]
@@ -2055,7 +2055,7 @@ class _StatelessWhile(_HigherOrderFunction):
       body_args = _merge_args(const_idxs_args, body_idxs_args)
       key, _, body_key = [None] * 3 if rng is None else jax.random.split(rng, 3)
       outputs = body_fun(*body_args, rng=body_key)
-      outputs = tuple([outputs[idx] for idx in trace_idxs])
+      outputs = tuple(outputs[idx] for idx in trace_idxs)
       return outputs + (key,)
 
     def maybe_initialise(arg, spec):
@@ -2565,7 +2565,7 @@ def _xla_sharding(proto):
 def _maybe_get_jaxpreqn(
     jaxpr: jex.core.ClosedJaxpr) -> Optional[jex.core.JaxprEqn]:
   def is_all_vars(vs):
-    return all([isinstance(v, jex.core.Var) for v in vs])
+    return all(isinstance(v, jex.core.Var) for v in vs)
 
   if (len(jaxpr.eqns) == 1 and
       is_all_vars(jaxpr.jaxpr.invars) and is_all_vars(jaxpr.jaxpr.outvars) and

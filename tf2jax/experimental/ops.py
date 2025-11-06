@@ -125,7 +125,7 @@ def _refine_with_static_input_shapes(
   input_dims = jax.tree_util.tree_flatten([x.shape for x in operands])[0]
   module = mhlo.refine_polymorphic_shapes(
       module,
-      validate_static_shapes=all([isinstance(x, int) for x in input_dims]),
+      validate_static_shapes=all(isinstance(x, int) for x in input_dims),
   )
   return mlir.module_to_string(module), input_specs
 

@@ -142,9 +142,9 @@ class _TensorEdge(NamedTuple):
       if len(op_def.output_arg) == 1:
         idx = int(idx)
       else:
-        found_sequence_args = any([
+        found_sequence_args = any(
             arg.number_attr or arg.type_list_attr for arg in op_def.output_arg
-        ])
+        )
         if idx != "0" or found_sequence_args:
           raise ValueError(
               "Only zero index and single tensors are supported for multiple "
@@ -253,8 +253,8 @@ class _OpNode:
       for input_name in self.jax_func.get_additional_inputs(**self.inner_fns):
         inputs.append(_TensorEdge.from_string(input_name, node_map))
 
-    self.control_inputs = tuple([inp for inp in inputs if inp.is_control])
-    self.inputs = tuple([inp for inp in inputs if not inp.is_control])
+    self.control_inputs = tuple(inp for inp in inputs if inp.is_control)
+    self.inputs = tuple(inp for inp in inputs if not inp.is_control)
 
   @property
   def all_inputs(self) -> Tuple[_TensorEdge, ...]:
@@ -262,7 +262,7 @@ class _OpNode:
 
   @property
   def require_rng(self) -> bool:
-    inner_require_rngs = any([fn.require_rng for fn in self.inner_fns.values()])
+    inner_require_rngs = any(fn.require_rng for fn in self.inner_fns.values())
     return self.op in _TF_RANDOM_OPS or inner_require_rngs
 
   def __call__(
@@ -496,7 +496,7 @@ def convert(
   captures = list(
       safe_zip(
           [inp.op.name for inp in concrete_func.inputs[num_flat_args:]],
-          [inp for inp in concrete_func.captured_inputs],
+          list(concrete_func.captured_inputs),
       )
   )
   func_variables = {v.handle.ref(): v for v in concrete_func.variables}
@@ -505,9 +505,9 @@ def convert(
   }
   constants = {k: v.numpy() for k, v in captures if v.dtype != tf.resource}
 
-  captured_input_names = tuple([
+  captured_input_names = tuple(
       v.op.name for v in concrete_func.inputs[num_flat_args:]
-  ])
+  )
 
   def maybe_tensor_to_spec(v):
     if v is None or isinstance(v, tf.TensorSpec):
@@ -538,12 +538,12 @@ def convert(
     if exp_args:
       raise ValueError("If function_spec is None then only keyword arguments "
                        f"are expected, found args={exp_args} in structure.")
-    parameters = tuple([
+    parameters = tuple(
         # TODO(b/266552275) Remove temporary fix for TF-Hub.
         inspect.Parameter(
             k.replace("$", "___"), kind=inspect.Parameter.KEYWORD_ONLY)
         for k in tree.flatten(exp_kwargs.keys())
-    ])
+    )
     signature = inspect.Signature(parameters=parameters)
 
   # Extract custom_gradient functions from the registry.
@@ -627,10 +627,10 @@ class _Subgraph(NamedTuple):
 
   @property
   def unique_inputs(self) -> Tuple[_TensorEdge, ...]:
-    unique_captures = tuple([
+    unique_captures = tuple(
         x for x in _unique_everseen(self.captures)
         if x not in set(self.function_inputs)
-    ])
+    )
     return self.function_inputs + unique_captures
 
   @property
@@ -639,7 +639,7 @@ class _Subgraph(NamedTuple):
 
   @property
   def require_rng(self) -> bool:
-    return any([n.require_rng for n in self.subgraph])
+    return any(n.require_rng for n in self.subgraph)
 
   def __call__(
       self,
@@ -647,7 +647,7 @@ class _Subgraph(NamedTuple):
       *,
       rng: jnp.ndarray,
   ) -> Tuple[Tuple[jnp.ndarray, ...], Mapping[str, jnp.ndarray]]:
-    grad_inputs = tuple([_TensorEdge(v.name) for v in self.grad_fn.input_specs])
+    grad_inputs = tuple(_TensorEdge(v.name) for v in self.grad_fn.input_specs)
 
     @jax.custom_gradient
     def fn(*args):
@@ -664,7 +664,7 @@ class _Subgraph(NamedTuple):
         else:
           eval_cache.outputs[inp.op_name] = val
 
-      num_rng_required = sum([node.require_rng for node in self.subgraph])
+      num_rng_required = sum(node.require_rng for node in self.subgraph)
       if num_rng_required:
         rng_keys = list(jax.random.split(rng, num_rng_required))
       else:
@@ -805,7 +805,7 @@ def _extract_subgraphs(graphdef, nodes, library):
       captured_inputs = all_specs[len(node.input):]
 
       # Traverse and extract subgraph.
-      subgraph = set([x.op_name for x in inputs + captured_inputs])
+      subgraph = {x.op_name for x in inputs + captured_inputs}
       unexpanded = [x.op_name for x in outputs]
       while unexpanded:
         top_node, *unexpanded = unexpanded
@@ -823,7 +823,7 @@ def _extract_subgraphs(graphdef, nodes, library):
           sum([op_map[n][1].inputs for n in subgraph], ()) + output_node.inputs)
       for inp in captured_inputs:
         is_internal = all(
-            [x.op_name in subgraph for x in op_map[inp.op_name][1].inputs])
+            x.op_name in subgraph for x in op_map[inp.op_name][1].inputs)
         if inp not in used_inputs:
           unused_captures.append(inp)
         elif is_internal:
@@ -854,7 +854,7 @@ def _extract_subgraphs(graphdef, nodes, library):
       )
 
       excluded = inputs + unused_captures + external_captures
-      subgraph = subgraph.difference(set([x.op_name for x in excluded]))
+      subgraph = subgraph.difference({x.op_name for x in excluded})
       sub_nodes = [op_map[x] for x in subgraph]
       sub_nodes = [x for _, x in sorted(sub_nodes)]
       subgraphs[grad_fn_name] = _Subgraph(
@@ -865,7 +865,7 @@ def _extract_subgraphs(graphdef, nodes, library):
           grad_fn=grad_fn,
       )
 
-  num_nodes = sum([len(g.subgraph) for g in subgraphs.values()])
+  num_nodes = sum(len(g.subgraph) for g in subgraphs.values())
   num_unique_nodes = len(
       set(sum([[x.name for x in g.subgraph] for g in subgraphs.values()], [])))
   if num_nodes != num_unique_nodes:
@@ -876,7 +876,7 @@ def _extract_subgraphs(graphdef, nodes, library):
 
 def _infer_relu_from_jax2tf(nodes):
   """Detect max(x, 0) and replace with jax.nn.relu."""
-  found_jax2tf = any(["jax2tf_out" in n.name for n in nodes])
+  found_jax2tf = any("jax2tf_out" in n.name for n in nodes)
   node_map = {n.name: n for n in nodes}
   for node in nodes:
     if node.op == "Maximum" and "jax2tf" in node.name and "_relu_" in node.name:
@@ -956,7 +956,8 @@ def _validate_inputs(
   expected_tree = tree.unflatten_as(structured_specs, expected_args)
 
   def format_spec(spec: tf.TensorSpec) -> str:
-    return "{}[{}]".format(spec.dtype.name, ",".join(map(str, spec.shape)))
+    shape_str = ",".join(map(str, spec.shape))
+    return f"{spec.dtype.name}[{shape_str}]"
 
   def check_arg(arg: _ExpectedArg):
     arg_desc = "UNUSED" if arg.spec is _UNUSED_INPUT else format_spec(arg.spec)
@@ -1139,7 +1140,7 @@ def _convert(
   nodes = _toposort(node_map, output_names)
   nodes = [_OpNode(node, library, node_map) for node in nodes]
   output_args = [_TensorEdge.from_string(v, node_map) for v in output_names]
-  num_rng_required = sum([node.require_rng for node in nodes])
+  num_rng_required = sum(node.require_rng for node in nodes)
 
   if config.get_config("infer_relu_from_jax2tf"):
     _infer_relu_from_jax2tf(nodes)
@@ -1163,7 +1164,7 @@ def _convert(
     inputs = dict(
         tree.flatten_with_path((bound_args.args, bound_args.kwargs)))
     try:
-      inputs = tuple([inputs[p] for p, _ in input_path_to_specs])
+      inputs = tuple(inputs[p] for p, _ in input_path_to_specs)
     except KeyError as e:
       input_err_message = _validate_inputs(signature, structured_inputs, inputs)
       err_message = (
@@ -1223,7 +1224,7 @@ def _convert(
       raise ValueError(f"Some parameters are missing, {missing_params}.")
 
     full_inputs = inputs + tuple(
-        [all_params[var_by_node.get(v, v)] for v in captured_input_names])
+        all_params[var_by_node.get(v, v)] for v in captured_input_names)
     full_inputs = list(
         safe_zip(input_names + captured_input_names, full_inputs)
     )
@@ -1255,7 +1256,7 @@ def _convert(
 
         eval_cache.free_inputs(node)
 
-    tensor_outputs = tuple([eval_cache.outputs[k.op_name] for k in output_args])
+    tensor_outputs = tuple(eval_cache.outputs[k.op_name] for k in output_args)
     tensor_outputs = [v for v in tensor_outputs if v is not _EMPTY_RETURN_VALUE]
 
     # Merge the tensor and non-tensor outputs.
@@ -1325,14 +1326,14 @@ def _convert_library_function(
   ]
   signature = inspect.Signature(params)
 
-  structured_inputs = tuple([
+  structured_inputs = tuple(
       tf.TensorSpec(None, dtype=tf.as_dtype(arg.type), name=arg.name)
       for arg in proto.signature.input_arg
-  ])
-  structured_outputs = tuple([
+  )
+  structured_outputs = tuple(
       tf.TensorSpec(None, dtype=tf.as_dtype(arg.type), name=arg.name)
       for arg in proto.signature.output_arg
-  ])
+  )
 
   def node_to_spec(v):
     return tf.TensorSpec(
@@ -1345,7 +1346,7 @@ def _convert_library_function(
   structured_inputs = structured_inputs + var_inputs
 
   # Does any of the ops or inner functions require RNG?
-  require_rng = any([n.op in _TF_RANDOM_OPS for n in proto.node_def])
+  require_rng = any(n.op in _TF_RANDOM_OPS for n in proto.node_def)
   for node in proto.node_def:
     for attr in node.attr.values():
       if attr.func.name:
@@ -1399,9 +1400,9 @@ def _convert_all_gradient_functions(
     recurse: bool = True,
 ) -> None:
   """Recursively convert all custom gradients in a tf.Graph."""
-  for node, graph in _filter_nodes(_contains_custom_gradient, graph):
+  for node, node_graph in _filter_nodes(_contains_custom_gradient, graph):
     if recurse:
-      _convert_gradient_function(node, graph, library)
+      _convert_gradient_function(node, node_graph, library)
     else:
       grad_fn_name = str(node.attr["_gradient_op_type"].s, "utf-8")
       library[grad_fn_name] = None
@@ -1414,7 +1415,7 @@ def _convert_gradient_function(
 ) -> None:
   """Convert a custom_gradient function."""
   op = graph.as_graph_element(proto.name)
-  input_specs = tuple([tf.TensorSpec.from_tensor(v) for v in op.inputs])
+  input_specs = tuple(tf.TensorSpec.from_tensor(v) for v in op.inputs)
   grad_fn_name = str(proto.attr["_gradient_op_type"].s, "utf-8")
   if grad_fn_name in library:
     return
@@ -1435,9 +1436,9 @@ def _convert_gradient_function(
   try:
     # TODO(b/301726317) Use the escape hatch for call_tf as this may call
     # jax2tf inside of JAX transformations, which is normally disallowed.
-    # pylint: disable=g-import-not-at-top
+    # pylint: disable=g-import-not-at-top,import-outside-toplevel
     from jax.experimental.jax2tf import jax2tf as jax2tf_internal  # pytype: disable=import-error
-    # pylint: enable=g-import-not-at-top
+    # pylint: enable=g-import-not-at-top,import-outside-toplevel
     inside_call_tf = jax2tf_internal.inside_call_tf
 
     # TODO(b/301748972) Hack to support nesting of get_concrete_function in the
@@ -1496,9 +1497,9 @@ def _convert_gradient_function(
   grad_structured_outputs = tuple(
       itertools.dropwhile(lambda x: x is None,
                           concrete_tf_grad_fn.structured_outputs))
-  grad_output_specs = tuple([
+  grad_output_specs = tuple(
       tf.TensorSpec.from_tensor(x) for x in grad_structured_outputs
-  ])
+  )
   # Nones correspond to the outputs of the original function.
   num_fn_outputs = (
       len(concrete_tf_grad_fn.structured_outputs) -
