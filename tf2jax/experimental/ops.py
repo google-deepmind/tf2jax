@@ -61,7 +61,16 @@ def _refine_with_static_input_shapes(
     orig_main_name = ir.StringAttr(symbol_table.insert(orig_main)).value
 
     # This help refine polymorphic shapes.
-    new_main_input_types = [mlir.aval_to_ir_type(x) for x in operands]
+    if jax.__version_info__ >= (0, 10, 1):
+      dyn_size = ir.ShapedType.get_dynamic_size()
+      new_main_input_types = []
+      for x in operands:
+        shape = [d if isinstance(d, int) else dyn_size for d in x.shape]
+        new_main_input_types.append(
+            ir.RankedTensorType.get(shape, mlir.dtype_to_ir_type(x.dtype))
+        )
+    else:
+      new_main_input_types = [mlir.aval_to_ir_type(x) for x in operands]  # pytype: disable=missing-parameter
     # Retain the original element type. This is necessary because
     # jax.custom_gradient will replace integer types with the corresponding
     # tangent types, i.e. float0.
