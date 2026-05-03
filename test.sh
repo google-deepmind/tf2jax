@@ -65,7 +65,7 @@ else
   N_JOBS=$(grep -c ^processor /proc/cpuinfo)
 fi
 
-CHECK_CUSTOM_CALLS_TEST=0 pytest -n "${N_JOBS}" --pyargs tf2jax
+CHECK_CUSTOM_CALLS_TEST=0 pytest -n "${N_JOBS}" --cov=tf2jax --cov-report=term-missing --cov-report=html --pyargs tf2jax
 
 # Native lowering is in active development so we test against nightly and github head.
 pip uninstall --yes tensorflow
