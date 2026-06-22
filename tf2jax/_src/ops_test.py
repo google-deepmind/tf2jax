@@ -1865,6 +1865,17 @@ class OpsTest(test_util.TestCase):
     self._test_convert(scatter_nd_static, ())
 
   @chex.variants(with_jit=True, without_jit=True)
+  def test_scatter_nd_duplicate_indices(self):
+    # Duplicate index [0]: updates 10 and 30 should be summed per TF semantics.
+    idxs = np.array([[0], [1], [0]], dtype=np.int32)
+    vals = np.array([10.0, 20.0, 30.0], dtype=np.float32)
+    shape = np.array([3], dtype=np.int32)
+
+    def scatter_nd(idx, val):
+      return tf.raw_ops.ScatterNd(indices=idx, updates=val, shape=shape)
+    self._test_convert(scatter_nd, [idxs, vals])
+
+  @chex.variants(with_jit=True, without_jit=True)
   def test_select(self):
     inputs = [
         np.array([True, False]),

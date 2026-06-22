@@ -199,9 +199,9 @@ def scatter_nd(indices, updates, shape):
   res = np_.zeros(shape, updates.dtype)
   key = tuple(np_.moveaxis(indices, -1, 0))
   if np_ is np:
-    res[key] = updates
+    np.add.at(res, key, updates)
   else:
-    res = res.at[key].set(updates)
+    res = res.at[key].add(updates)
   return res
 
 
