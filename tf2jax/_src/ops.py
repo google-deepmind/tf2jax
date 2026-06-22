@@ -962,7 +962,12 @@ def _fused_batch_norm(proto):
     raise ValueError(f"Found unsupported data format {data_format}.")
 
   epsilon = proto.attr["epsilon"].f
-  exponential_avg_factor = proto.attr["exponential_avg_factor"].f
+  # Default to 1.0 (TF op default) when absent, not 0.0 (protobuf default).
+  exponential_avg_factor = (
+      proto.attr["exponential_avg_factor"].f
+      if "exponential_avg_factor" in proto.attr
+      else 1.0
+  )
   one_minus_factor = 1. - exponential_avg_factor
   is_training = proto.attr["is_training"].b
 

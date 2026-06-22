@@ -1124,6 +1124,59 @@ class OpsTest(test_util.TestCase):
 
     self._test_convert(raw_func, inputs)
 
+  def test_fused_batch_norm_missing_avg_factor(self):
+    """Missing exponential_avg_factor should behave like 1.0, not 0.0."""
+    np.random.seed(42)
+    ndim = 5
+    x_val = np.random.normal(size=(3, 16, 16, ndim)).astype(np.float32)
+    scale_val = np.array([3.0] * ndim, dtype=np.float32)
+    offset_val = np.array([2.0] * ndim, dtype=np.float32)
+    mean_val = np.array(range(ndim), dtype=np.float32)
+    var_val = np.array(range(ndim), dtype=np.float32) * 0.1
+
+    # Build a NodeDef with exponential_avg_factor absent, simulating
+    # strip_default_attrs. The proto float default is 0.0, but the TF
+    # op default is 1.0.
+    proto = tf.compat.v1.NodeDef()
+    proto.op = "FusedBatchNormV3"
+    proto.name = "test_fbn"
+    proto.attr["T"].type = tf.float32.as_datatype_enum
+    proto.attr["U"].type = tf.float32.as_datatype_enum
+    proto.attr["data_format"].s = b"NHWC"
+    proto.attr["epsilon"].f = 0.001
+    proto.attr["is_training"].b = True
+    # exponential_avg_factor intentionally NOT set.
+
+    parsed_fn = ops.get_parser("FusedBatchNormV3")(proto)
+    jax_out = parsed_fn(
+        jax.numpy.asarray(x_val),
+        jax.numpy.asarray(scale_val),
+        jax.numpy.asarray(offset_val),
+        jax.numpy.asarray(mean_val),
+        jax.numpy.asarray(var_val),
+    )
+
+    # TF reference: default exponential_avg_factor=1.0.
+    tf_out = tf.raw_ops.FusedBatchNormV3(
+        x=x_val,
+        scale=scale_val,
+        offset=offset_val,
+        mean=mean_val,
+        variance=var_val,
+        data_format="NHWC",
+        is_training=True,
+    )
+
+    # Running mean and var should match TF's output with default factor=1.0.
+    # With the bug, parsed_fn uses factor=0.0 so new_mean=running_mean
+    # instead of batch_mean.
+    self.assertAllClose(
+        np.asarray(tf_out[1]), np.asarray(jax_out[1]), atol=1e-5
+    )
+    self.assertAllClose(
+        np.asarray(tf_out[2]), np.asarray(jax_out[2]), atol=1e-5
+    )
+
   @chex.variants(with_jit=True, without_jit=True)
   @parameterized.named_parameters(
       chex.params_product(
