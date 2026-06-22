@@ -70,7 +70,7 @@ def _refine_with_static_input_shapes(
             ir.RankedTensorType.get(shape, mlir.dtype_to_ir_type(x.dtype))
         )
     else:
-      new_main_input_types = [mlir.aval_to_ir_type(x) for x in operands]  # pytype: disable=missing-parameter
+      new_main_input_types = [mlir.aval_to_ir_type(x) for x in operands]  # pylint: disable=no-value-for-parameter  # pytype: disable=missing-parameter
     # Retain the original element type. This is necessary because
     # jax.custom_gradient will replace integer types with the corresponding
     # tangent types, i.e. float0.
