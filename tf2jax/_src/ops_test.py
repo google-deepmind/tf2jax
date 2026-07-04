@@ -848,16 +848,22 @@ class OpsTest(test_util.TestCase):
   @chex.variants(with_jit=True, without_jit=True)
   @parameterized.named_parameters(
       chex.params_product(
-          (("exclusive", True), ("not_exclusive", False),),
+          (
+              ("exclusive", True),
+              ("not_exclusive", False),
+          ),
           (("reverse", True), ("forward", False)),
+          (("axis_positive", 1), ("axis_negative", -2)),
           named=True,
-      ))
-  def test_cumsum(self, exclusive, reverse):
+      )
+  )
+  def test_cumsum(self, exclusive, reverse, axis):
     inputs = np.array(np.reshape(range(24), (4, 3, 2)), dtype=np.int32)
 
     def cumsum_fn(xs):
       return tf.raw_ops.Cumsum(
-          x=xs, axis=1, exclusive=exclusive, reverse=reverse)
+          x=xs, axis=axis, exclusive=exclusive, reverse=reverse
+      )
     self._test_convert(cumsum_fn, inputs)
 
     # Check static inputs result in static outputs.
@@ -873,15 +879,16 @@ class OpsTest(test_util.TestCase):
               ("not_exclusive", False),
           ),
           (("reverse", True), ("forward", False)),
+          (("axis_positive", 1), ("axis_negative", -2)),
           named=True,
       )
   )
-  def test_cumprod(self, exclusive, reverse):
+  def test_cumprod(self, exclusive, reverse, axis):
     inputs = np.array(np.reshape(range(24), (4, 3, 2)), dtype=np.int32)
 
     def cumprod_fn(xs):
       return tf.raw_ops.Cumprod(
-          x=xs, axis=1, exclusive=exclusive, reverse=reverse
+          x=xs, axis=axis, exclusive=exclusive, reverse=reverse
       )
 
     self._test_convert(cumprod_fn, inputs)

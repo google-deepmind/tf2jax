@@ -671,6 +671,8 @@ def _cumsum(proto):
 
   def _func(x: jnp.ndarray, axis: jnp.ndarray) -> jnp.ndarray:
     axis = axis.item()
+    if axis < 0:
+      axis = axis + x.ndim
     if reverse:
       x = anp.flip(x, axis=axis)
     if exclusive:
@@ -696,6 +698,8 @@ def _cumprod(proto):
 
   def _func(x: jnp.ndarray, axis: jnp.ndarray) -> jnp.ndarray:
     axis = axis.item()
+    if axis < 0:
+      axis = axis + x.ndim
     if reverse:
       x = anp.flip(x, axis=axis)
     if exclusive:
