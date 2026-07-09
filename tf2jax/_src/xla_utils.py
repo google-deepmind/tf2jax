@@ -32,7 +32,7 @@ def get_conv_sequence(
   if isinstance(value, int):
     return [value] * ndim
   elif len(value) == 1:
-    return value * ndim
+    return value * ndim  # pyrefly: ignore[unsupported-operation]
   elif len(value) == ndim:
     return value
   elif len(value) == ndim + 2:

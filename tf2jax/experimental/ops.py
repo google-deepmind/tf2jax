@@ -271,7 +271,7 @@ def _xla_call_module(proto):
       # The change in _refine_with_static_input_shapes is not enough as
       # depending on whether we are computing gradient via Jax or TF, integer
       # types may or may not be replaced with float0.
-      operands = [
+      operands = [  # pyrefly: ignore[bad-assignment]
           jnp.zeros(x.shape, y.dtype) if x.dtype == jax.dtypes.float0 else x
           for x, y in zip(operands, input_specs, strict=True)
       ]
