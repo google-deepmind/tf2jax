@@ -14,6 +14,7 @@
 # ==============================================================================
 """Tests tf2jax."""
 
+import functools
 import inspect
 
 from absl.testing import parameterized
@@ -31,6 +32,21 @@ import tree
 
 # Parse absl flags test_srcdir and test_tmpdir.
 jax.config.parse_flags_with_absl()
+
+
+def disable_tensor_float_32(fn):
+  """Decorator that disables TF32 execution for strict FP32 precision."""
+
+  @functools.wraps(fn)
+  def decorated(*args, **kwargs):
+    prev = tf.config.experimental.tensor_float_32_execution_enabled()
+    try:
+      tf.config.experimental.enable_tensor_float_32_execution(False)
+      return fn(*args, **kwargs)
+    finally:
+      tf.config.experimental.enable_tensor_float_32_execution(prev)
+
+  return decorated
 
 
 class TestDense(tf.Module):
@@ -454,10 +470,12 @@ class FeaturesTest(tf.test.TestCase, parameterized.TestCase):
     self.assertAllClose(tf.sin(tf_fn(inputs)), tf2jax_fn(inputs))
 
   @chex.variants(with_jit=True, without_jit=True)
+  @disable_tensor_float_32
   def test_non_unique_variable_names(self):
     model = TestMLP(input_size=5, sizes=[7, 8])
     self.assertNotEqual(
-        len(set([v.name for v in model.variables])), len(model.variables))
+        len(set([v.name for v in model.variables])), len(model.variables)
+    )
 
     @tf.function
     def forward(x):
@@ -522,6 +540,7 @@ class FeaturesTest(tf.test.TestCase, parameterized.TestCase):
     ):
       self.variant(jax_func)({"aaa": jax_params["aaa"]}, np_inputs)
 
+  @disable_tensor_float_32
   def test_export_saved_model_export_jax_module(self):
     input_dim = 5
     l = TestDense(input_dim=input_dim, output_size=5)
