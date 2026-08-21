@@ -207,12 +207,12 @@ def scatter_nd(indices, updates, shape):
 
 # Reduction ops.
 def all_(arr, axis: Union[int, Sequence[int]], keepdims: bool):
-  axis = tuple(axis) if isinstance(axis, (list, tuple)) else (axis,)
+  axis = tuple(axis) if isinstance(axis, (list, tuple)) else (axis,)  # pyrefly: ignore[bad-assignment]
   return _get_np(arr).all(arr, axis=axis, keepdims=keepdims)
 
 
 def any_(arr, axis: Union[int, Sequence[int]], keepdims: bool):
-  axis = tuple(axis) if isinstance(axis, (list, tuple)) else (axis,)
+  axis = tuple(axis) if isinstance(axis, (list, tuple)) else (axis,)  # pyrefly: ignore[bad-assignment]
   return _get_np(arr).any(arr, axis=axis, keepdims=keepdims)
 
 
@@ -225,22 +225,22 @@ def cumprod(arr, axis: int):
 
 
 def max_(arr, axis: Union[int, Sequence[int]], keepdims: bool):
-  axis = tuple(axis) if isinstance(axis, (list, tuple)) else (axis,)
+  axis = tuple(axis) if isinstance(axis, (list, tuple)) else (axis,)  # pyrefly: ignore[bad-assignment]
   return _get_np(arr).max(arr, axis=axis, keepdims=keepdims)
 
 
 def min_(arr, axis: Union[int, Sequence[int]], keepdims: bool):
-  axis = tuple(axis) if isinstance(axis, (list, tuple)) else (axis,)
+  axis = tuple(axis) if isinstance(axis, (list, tuple)) else (axis,)  # pyrefly: ignore[bad-assignment]
   return _get_np(arr).min(arr, axis=axis, keepdims=keepdims)
 
 
 def prod(arr, axis: Union[int, Sequence[int]], keepdims: bool):
-  axis = tuple(axis) if isinstance(axis, (list, tuple)) else (axis,)
+  axis = tuple(axis) if isinstance(axis, (list, tuple)) else (axis,)  # pyrefly: ignore[bad-assignment]
   return  _get_np(arr).prod(arr, axis=axis, keepdims=keepdims)
 
 
 def sum_(arr, axis: Union[int, Sequence[int]], keepdims: bool):
-  axis = tuple(axis) if isinstance(axis, (list, tuple)) else (axis,)
+  axis = tuple(axis) if isinstance(axis, (list, tuple)) else (axis,)  # pyrefly: ignore[bad-assignment]
   return  _get_np(arr).sum(arr, axis=axis, keepdims=keepdims)
 
 

@@ -100,7 +100,7 @@ class Jax2TfTest(test_util.TestCase):
     jax.tree.map(self.assertAllClose, rejax_outputs, tf_outputs)
     if with_grad:
       rejax_grads = _compute_gradients(rejax_func, *inputs)
-      jax.tree.map(assert_grad_all_close, jax_grads, rejax_grads)
+      jax.tree.map(assert_grad_all_close, jax_grads, rejax_grads)  # pyrefly: ignore[unbound-name]
 
     # Jax -> TF -> SavedModel -> TF
     model = tf.Module()
@@ -281,7 +281,7 @@ class Jax2TfTest(test_util.TestCase):
       def __call__(self, x):
         return jax.lax.conv_general_dilated(
             x,
-            rhs=kernels,
+            rhs=kernels,  # pyrefly: ignore[bad-argument-type]
             window_strides=(1, 1),
             padding="SAME",
             lhs_dilation=(1, 1),
