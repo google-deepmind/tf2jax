@@ -14,6 +14,7 @@
 # ==============================================================================
 """Tests for JAX -> TF -> JAX with partitioning."""
 
+import re
 from absl.testing import absltest
 from flax import linen as nn
 import jax
@@ -48,19 +49,19 @@ def _get_param_pspecs():
   }
 
 
+_SHARDY_FALSE_PATTERN = re.compile(
+    r'attr {\s*key: "use_shardy_partitioner"\s*value {\s*b: false\s*}\s*}'
+)
+_SHARDY_TRUE_PATTERN = re.compile(
+    r'attr {\s*key: "use_shardy_partitioner"\s*value {\s*b: true\s*}\s*}'
+)
+
+
 class ShardingTest(test_util.TestCase):
 
-  def test_sharding(self):
-    if jax.default_backend().upper() != 'TPU':
-      self.skipTest('Only run sharding tests on TPU.')
-
-    # Set up network and inputs.
-    transformed = FlaxNet()
-    rng = jax.random.key(42)
-    images = jax.random.normal(rng, [2, 16, 16, 3])
-    grad_tols = dict(rtol=1e-4)
-
+  def _create_apply_fns(self, rng, images):
     # Init params.
+    transformed = FlaxNet()
     variables = jax.jit(transformed.init)(rng, images)
     params = variables['params']  # Extract the parameters
     transformed_apply = lambda p, x: transformed.apply({'params': p}, x)
@@ -81,6 +82,20 @@ class ShardingTest(test_util.TestCase):
             (params_pspecs, jax.sharding.PartitionSpec('data'))
         ),
     )
+
+    return params, transformed_apply, partitioned_apply
+
+  def test_sharding(self):
+    if jax.default_backend().upper() != 'TPU':
+      self.skipTest('Only run sharding tests on TPU.')
+
+    # Set up network and inputs.
+    rng = jax.random.key(42)
+    images = jax.random.normal(rng, [2, 16, 16, 3])
+    params, transformed_apply, partitioned_apply = self._create_apply_fns(
+        rng, images
+    )
+
     self.assertAllClose(
         jax.jit(transformed_apply)(params, images),
         partitioned_apply(params, images),
@@ -95,6 +110,7 @@ class ShardingTest(test_util.TestCase):
     def partitioned_grad(params, xs):
       return jnp.sum(partitioned_apply(params, xs))
 
+    grad_tols = dict(rtol=1e-4)
     self.assertAllClose(
         unpartitioned_grad(params, images),
         partitioned_grad(params, images),
@@ -150,6 +166,48 @@ class ShardingTest(test_util.TestCase):
             reloaded_output.sharding, 4
         )
     )
+
+  def test_sharding_no_shardy(self):
+    if jax.default_backend().upper() != 'TPU':
+      self.skipTest('Only run sharding tests on TPU.')
+
+    rng = jax.random.key(42)
+    images = jax.random.normal(rng, [2, 16, 16, 3])
+    params, _, partitioned_apply = self._create_apply_fns(rng, images)
+
+    # Load serialized model.
+    export_dir = 'third_party/py/tf2jax/test_data/no_shardy'
+    reloaded = tf.saved_model.load(export_dir)
+    reloaded_tf_fn = tf.function(reloaded.f, autograph=False)
+    reloaded_tf_graph = reloaded_tf_fn.get_concrete_function(
+        params=tree.map_structure(np.zeros_like, params),
+        inputs=np.zeros_like(images),
+    ).graph.as_graph_def()
+
+    # Check graphdef
+    reloaded_tf_graph_str = str(reloaded_tf_graph)
+    self.assertFalse(_SHARDY_TRUE_PATTERN.search(reloaded_tf_graph_str))
+    self.assertTrue(_SHARDY_FALSE_PATTERN.search(reloaded_tf_graph_str))
+
+    # convert to tf2jax.
+    reloaded_jax_fn = tf2jax.convert_functional(
+        reloaded_tf_fn,
+        params=tree.map_structure(np.zeros_like, params),
+        inputs=np.zeros_like(images),
+    )
+
+    # Check shardings.
+    partitioned_output = partitioned_apply(params, images)
+    self.assertLen(partitioned_output.devices(), 8)
+    reloaded_output = jax.jit(reloaded_jax_fn)(params, images)
+    self.assertLen(reloaded_output.devices(), 8)
+    self.assertTrue(
+        partitioned_output.sharding.is_equivalent_to(
+            reloaded_output.sharding, 4
+        )
+    )
+
+    self.assertAllClose(partitioned_output, reloaded_output)
 
 
 if __name__ == '__main__':
