@@ -49,7 +49,7 @@ TF2JAX enables existing TensorFlow functions and models (including
 and/or fine-tuned within JAX codebases. The conversion process is transparent
 to the users, which is useful for debugging and introspection.
 
-This also provide a pathway for JAX users to integrate JAX functions serialized
+This also provides a pathway for JAX users to integrate JAX functions serialized
 via `jax2tf.convert`, back into their existing JAX codebases.
 
 See [section](#alternatives) at the end for comparison with an alternative
@@ -116,7 +116,7 @@ jax_outputs = jax_func(x)
 
 ## Randomness and PRNG Keys
 
-A TensorFlow function that make use of random ops will be converted to a JAX
+A TensorFlow function that makes use of random ops will be converted to a JAX
 function that takes a PRNG key as a keyword-only argument. TF2JAX will
 complain loudly if a PRNG key is required but not provided.
 
@@ -347,7 +347,7 @@ with tf2jax.override_config("xlacallmodule_strict_checks", False):
 
 Currently, only a subset of TensorFlow ops are supported, and not necessarily
 all functionalities are supported for some ops. The code will fail fast. Support
-for additional TensorFlow ops are added on a as-needed basis. Please submit your
+for additional TensorFlow ops are added on an as-needed basis. Please submit your
 requests via Github issues or send in your pull requests.
 
 There will likely to be some cases where the resulting JAX code is not
