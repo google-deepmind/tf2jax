@@ -1952,6 +1952,30 @@ class OpsTest(test_util.TestCase):
     self._test_convert(select_static, ())
 
   @chex.variants(with_jit=True, without_jit=True)
+  def test_select_v2(self):
+    # Unlike Select, SelectV2 broadcasts condition, x and y against each other
+    # with the usual numpy rules, so a rank-1 condition aligns with the last
+    # dimension rather than selecting whole rows.
+    def select_v2(cond, x, y):
+      return tf.raw_ops.SelectV2(condition=cond, t=x, e=y)
+
+    xs = np.arange(9, dtype=np.float32).reshape((3, 3))
+    ys = -xs - 100.0
+
+    # Rank-1 condition broadcasts along the columns.
+    self._test_convert(select_v2, [np.array([True, False, True]), xs, ys])
+    # Rank-1 condition whose length differs from the leading dimension.
+    self._test_convert(
+        select_v2,
+        [np.array([True, False]), xs[:, :2], ys[:, :2]],
+    )
+    # Condition broadcasts along the rows.
+    self._test_convert(select_v2, [np.array([[True], [False], [True]]), xs, ys])
+    # Same rank, and scalar condition.
+    self._test_convert(select_v2, [xs > 3, xs, ys])
+    self._test_convert(select_v2, [np.array(True), xs, ys])
+
+  @chex.variants(with_jit=True, without_jit=True)
   def test_size(self):
     inputs = np.array((10, 5))
 

@@ -1791,7 +1791,6 @@ def _scatter_nd(proto):
   return _func
 
 
-@register_operation("SelectV2")
 @register_operation("Select")
 def _select(proto):
   """Parse a Select op."""
@@ -1802,7 +1801,27 @@ def _select(proto):
       x: jnp.ndarray,
       y: jnp.ndarray,
   ) -> jnp.ndarray:
+    # A rank-1 `conds` selects along the first (batch) dimension of `x` and `y`,
+    # so it is right-padded with singleton dimensions before broadcasting.
     conds = anp.expand_dims(conds, axis=tuple(range(conds.ndim, x.ndim)))
+    return anp.where(conds, x, y)
+
+  return _func
+
+
+@register_operation("SelectV2")
+def _select_v2(proto):
+  """Parse a SelectV2 op."""
+  _check_attrs(proto, {"T"})
+
+  def _func(
+      conds: jnp.ndarray,
+      x: jnp.ndarray,
+      y: jnp.ndarray,
+  ) -> jnp.ndarray:
+    # Unlike Select, SelectV2 broadcasts `conds`, `x` and `y` against each other
+    # with the usual numpy rules, i.e. a rank-1 `conds` aligns with the last
+    # dimension.
     return anp.where(conds, x, y)
 
   return _func
