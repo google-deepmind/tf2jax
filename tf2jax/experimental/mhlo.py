@@ -86,7 +86,7 @@ def ir_type_to_dtype(ir_type: ir.Type) -> jnp.dtype:
       ir.Float8E4M3FNType.get(): jnp.float8_e4m3fn,
       ir.Float8E5M2Type.get(): jnp.float8_e5m2,
   }
-  return ir_to_jax[ir_type]  # pyrefly: ignore[bad-index]
+  return ir_to_jax[ir_type]  # pyrefly: ignore[bad-index, bad-return]
 
 
 _UKNOWN_DIM_PREFIX = "tf2jax_unknown_dim"
