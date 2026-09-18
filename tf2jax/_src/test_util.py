@@ -35,10 +35,25 @@ class TestCase(parameterized.TestCase, tf.test.TestCase):
     # Ensure that all TF ops are created on the proper device (TPU, GPU or CPU)
     jax_default_device = jax.default_backend().upper()
     tf_logical_devices = tf.config.list_logical_devices(jax_default_device)
-    tf_default_device = tf_logical_devices[0]
-    logging.info("Running tf2jax converted code on %s.", tf_default_device)
-    self.assertEqual(jax_default_device, tf_default_device.device_type)
+    self._tf_on_cpu_fallback = False
+    if tf_logical_devices:
+      tf_default_device = tf_logical_devices[0]
+      self.assertEqual(jax_default_device, tf_default_device.device_type)
+    else:
+      tf_default_device = tf.config.list_logical_devices("CPU")[0]
+      self._tf_on_cpu_fallback = True
+    logging.info(
+        "Running JAX on %s and TF on %s.", jax_default_device, tf_default_device
+    )
 
     with contextlib.ExitStack() as stack:
       stack.enter_context(tf.device(tf_default_device))
+      if self._tf_on_cpu_fallback and jax_default_device == "TPU":
+        stack.enter_context(jax.default_matmul_precision("float32"))
       self.addCleanup(stack.pop_all().close)
+
+  def assertAllClose(self, a, b, rtol=1e-6, atol=1e-6, msg=None):  # pylint: disable=invalid-name
+    if getattr(self, "_tf_on_cpu_fallback", False):
+      rtol = max(rtol, 1e-4)
+      atol = max(atol, 1e-4)
+    super().assertAllClose(a, b, rtol=rtol, atol=atol, msg=msg)

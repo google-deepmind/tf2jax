@@ -2485,7 +2485,7 @@ class OpsTest(test_util.TestCase):
     def while_loop(x):
       return tf.while_loop(cond, body, [x, step])
 
-    if jax.default_backend().lower() == "tpu":
+    if tf.config.list_logical_devices("TPU"):
       tpu_context = self.assertRaisesRegex(
           tf.errors.InvalidArgumentError,
           ("Input 0 to node `while/ones` with op Fill must be a compile-time "

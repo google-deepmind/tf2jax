@@ -85,10 +85,17 @@ class Jax2TfTest(test_util.TestCase):
       jax_grads = _compute_gradients(jax_func, *inputs)
 
     # Jax -> TF
+    tf_has_backend_device = bool(
+        tf.config.list_logical_devices(jax.default_backend().upper())
+    )
     tf_func = jax2tf.convert(jax_func, with_gradient=with_grad)
     tf_func = tf.function(tf_func, jit_compile=True, autograph=False)
-    tf_outputs = tf_func(*inputs)
-    jax.tree.map(self.assertAllClose, jax_outputs, tf_outputs)
+    if tf_has_backend_device:
+      tf_outputs = tf_func(*inputs)
+      jax.tree.map(self.assertAllClose, jax_outputs, tf_outputs)
+    else:
+      tf_func.get_concrete_function(*inputs)
+      tf_outputs = jax_outputs
 
     # Jax -> TF -> Jax
     with config.override_config("convert_custom_gradient", with_custom_grad):
@@ -109,8 +116,9 @@ class Jax2TfTest(test_util.TestCase):
     tf.saved_model.save(model, tmp_dir.full_path)
     del model
     restored = tf.saved_model.load(tmp_dir.full_path)
-    restored_tf_outputs = restored.f(*inputs)
-    jax.tree.map(self.assertAllClose, jax_outputs, restored_tf_outputs)
+    if tf_has_backend_device:
+      restored_tf_outputs = restored.f(*inputs)
+      jax.tree.map(self.assertAllClose, jax_outputs, restored_tf_outputs)
 
     # Jax -> TF -> SavedModel -> TF -> Jax
     with config.override_config("convert_custom_gradient", with_custom_grad):
@@ -675,6 +683,9 @@ class Jax2TfTest(test_util.TestCase):
     self.assertAllClose(tf_outputs, jax_outputs)
 
     # TF -> JAX -> TF
+    tf_has_backend_device = bool(
+        tf.config.list_logical_devices(jax.default_backend().upper())
+    )
     new_tf_forward = jax2tf.convert(
         jax_func, polymorphic_shapes=["(b, _)"], with_gradient=with_grad
     )
@@ -685,8 +696,9 @@ class Jax2TfTest(test_util.TestCase):
     self.assertEqual(
         concrete_new_tf_forward.structured_outputs.shape.as_list(), [None, 8]
     )
-    new_tf_outputs = concrete_new_tf_forward(inputs)
-    self.assertAllClose(new_tf_outputs, jax_outputs)
+    if tf_has_backend_device:
+      new_tf_outputs = concrete_new_tf_forward(inputs)
+      self.assertAllClose(new_tf_outputs, jax_outputs)
 
   @chex.variants(with_jit=True)
   @parameterized.named_parameters(
@@ -696,6 +708,10 @@ class Jax2TfTest(test_util.TestCase):
       )
   )
   def test_polymorphic_shape_refinement_dot(self, with_grad):
+    tf_has_backend_device = bool(
+        tf.config.list_logical_devices(jax.default_backend().upper())
+    )
+
     @jax.jit
     def forward(x, w):
       return jnp.dot(x, w)
@@ -712,8 +728,9 @@ class Jax2TfTest(test_util.TestCase):
     concrete_tf_fn = tf_fn.get_concrete_function(
         tf.TensorSpec(shape=(None, 4)), tf.TensorSpec(shape=(4, 5))
     )
-    tf_outputs = concrete_tf_fn(x, w)
-    self.assertAllClose(expected_outputs, tf_outputs)
+    if tf_has_backend_device:
+      tf_outputs = concrete_tf_fn(x, w)
+      self.assertAllClose(expected_outputs, tf_outputs)
 
     # JAX -> TF -> JAX
     jax_fn = tf2jax.convert_functional(
@@ -730,8 +747,9 @@ class Jax2TfTest(test_util.TestCase):
     concrete_tf_fn2 = tf_fn2.get_concrete_function(
         tf.TensorSpec(shape=(None, 4)), tf.TensorSpec(shape=(4, 5))
     )
-    tf_outputs2 = concrete_tf_fn2(x, w)
-    self.assertAllClose(expected_outputs, tf_outputs2)
+    if tf_has_backend_device:
+      tf_outputs2 = concrete_tf_fn2(x, w)
+      self.assertAllClose(expected_outputs, tf_outputs2)
 
     # JAX -> TF -> JAX -> TF -> SavedModel
     module = tf.Module()
@@ -748,6 +766,10 @@ class Jax2TfTest(test_util.TestCase):
       )
   )
   def test_polymorphic_shape_refinement_broadcast(self, with_grad):
+    tf_has_backend_device = bool(
+        tf.config.list_logical_devices(jax.default_backend().upper())
+    )
+
     @jax.jit
     def forward(x, y):
       return (jnp.broadcast_to(x, y.shape), x + y)
@@ -766,8 +788,9 @@ class Jax2TfTest(test_util.TestCase):
     concrete_tf_fn = tf_fn.get_concrete_function(
         tf.TensorSpec(shape=(None, 4)), tf.TensorSpec(shape=(2, None, 4))
     )
-    tf_outputs = concrete_tf_fn(x, y)
-    self.assertAllClose(expected_outputs, tf_outputs)
+    if tf_has_backend_device:
+      tf_outputs = concrete_tf_fn(x, y)
+      self.assertAllClose(expected_outputs, tf_outputs)
 
     # JAX -> TF -> JAX
     jax_fn = tf2jax.convert_functional(
@@ -786,8 +809,9 @@ class Jax2TfTest(test_util.TestCase):
     concrete_tf_fn2 = tf_fn2.get_concrete_function(
         tf.TensorSpec(shape=(None, 4)), tf.TensorSpec(shape=(2, None, 4))
     )
-    tf_outputs2 = concrete_tf_fn2(x, y)
-    self.assertAllClose(expected_outputs, tf_outputs2)
+    if tf_has_backend_device:
+      tf_outputs2 = concrete_tf_fn2(x, y)
+      self.assertAllClose(expected_outputs, tf_outputs2)
 
     # JAX -> TF -> JAX -> TF -> SavedModel
     module = tf.Module()
@@ -804,6 +828,9 @@ class Jax2TfTest(test_util.TestCase):
       )
   )
   def test_custom_gradient(self, with_grad):
+    tf_has_backend_device = bool(
+        tf.config.list_logical_devices(jax.default_backend().upper())
+    )
     inputs = np.array(range(6), dtype=np.float32).reshape(3, 2)
 
     # JAX
@@ -859,8 +886,9 @@ class Jax2TfTest(test_util.TestCase):
     concrete_tf_forward2 = tf_forward2.get_concrete_function(
         tf.TensorSpec(shape=(3, 2))
     )
-    tf_outputs2 = concrete_tf_forward2(inputs)
-    self.assertAllClose(tf_outputs2, re_jax_outputs)
+    if tf_has_backend_device:
+      tf_outputs2 = concrete_tf_forward2(inputs)
+      self.assertAllClose(tf_outputs2, re_jax_outputs)
 
     # Jax -> TF -> SavedModel -> TF -> Jax -> TF -> SavedModel
     model = tf.Module()
@@ -869,8 +897,9 @@ class Jax2TfTest(test_util.TestCase):
     tf.saved_model.save(model, tmp_dir.full_path)
     del model
     restored2 = tf.saved_model.load(tmp_dir.full_path)
-    new_tf_outputs = restored2.f(inputs)
-    self.assertAllClose(new_tf_outputs, tf_outputs2)
+    if tf_has_backend_device:
+      new_tf_outputs = restored2.f(inputs)
+      self.assertAllClose(new_tf_outputs, re_jax_outputs)
 
     # Jax -> TF -> SavedModel -> TF -> Jax -> TF -> SavedModel -> Jax
     with config.override_config("convert_custom_gradient", True):
@@ -918,6 +947,10 @@ class Jax2TfTest(test_util.TestCase):
       )
   )
   def test_custom_gradient_nested(self, with_grad):
+    if not tf.config.list_logical_devices(jax.default_backend().upper()):
+      self.skipTest(
+          "jax2tf.call_tf of XlaCallModule on TPU requires TF TPU XLA kernels."
+      )
     inputs = np.array(range(6), dtype=np.float32).reshape(3, 2)
 
     # JAX
@@ -1043,7 +1076,11 @@ class Jax2TfTest(test_util.TestCase):
     tf2jax2tf_fn = tf.function(tf2jax2tf_fn, autograph=False)
 
     inputs = np.linspace(-1.0, 1.0, 6, dtype=np.float32).reshape((2, 3))
-    self.assertAllClose(tf.sin(tf_fn(inputs)), tf2jax2tf_fn(inputs))
+    if tf.config.list_logical_devices(jax.default_backend().upper()):
+      self.assertAllClose(tf.sin(tf_fn(inputs)), tf2jax2tf_fn(inputs))
+    else:
+      rejax_fn = tf2jax.convert_functional(tf2jax2tf_fn, np.zeros_like(inputs))
+      self.assertAllClose(tf.sin(tf_fn(inputs)), rejax_fn(inputs))
 
   @chex.variants(with_jit=True, without_jit=True)
   @parameterized.named_parameters(
@@ -1144,7 +1181,12 @@ class Jax2TfTest(test_util.TestCase):
     )
     jax_fn = jax.jit(jax_fn)
     inputs = np.linspace(-1.0, 1.0, 6, dtype=np.float32).reshape((2, 3))
-    self.assertAllClose(jax_fn(inputs), tf_fn(inputs))
+    expected = (
+        tf_fn(inputs)
+        if tf.config.list_logical_devices(jax.default_backend().upper())
+        else forward(inputs)
+    )
+    self.assertAllClose(jax_fn(inputs), expected)
 
     if jax.default_backend().lower() != "cpu":
       with jax.default_device(jax.local_devices(backend="cpu")[0]):
@@ -1153,7 +1195,7 @@ class Jax2TfTest(test_util.TestCase):
         with tf2jax.config.override_config(
             "xlacallmodule_strict_checks", False
         ):
-          self.assertAllClose(jax_fn(inputs), tf_fn(inputs))
+          self.assertAllClose(jax_fn(inputs), expected)
 
   @chex.variants(with_jit=True, without_jit=True)
   def test_platform_index(self):

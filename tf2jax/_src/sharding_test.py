@@ -106,7 +106,10 @@ class ShardingTest(test_util.TestCase):
     def tf_fn(params, inputs):
       return jax2tf.convert(partitioned_apply)(params, inputs)
 
-    tf_fn(params, images)
+    if tf.config.list_logical_devices('TPU'):
+      tf_fn(params, images)
+    else:
+      tf_fn.get_concrete_function(params, images)
     module = tf.Module()
     module.f = tf_fn
     export_dir = self.create_tempdir().full_path
