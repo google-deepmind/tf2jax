@@ -360,6 +360,71 @@ class FeaturesTest(tf.test.TestCase, parameterized.TestCase):
       self.assertNotAllClose(tf_grads, jax_grads)
 
   @chex.variants(with_jit=True, without_jit=True)
+  def test_custom_gradient_multiple_outputs(self):
+    @tf.function
+    @tf.custom_gradient
+    def tf_func(x, y):
+      def grad(*dys):
+        return dys[0] * 2.0 + dys[2], dys[1] * 3.0 - dys[2]
+
+      return (x + y, x * y, x - y), grad
+
+    np_x = np.array([1.0, 2.0], np.float32)
+    np_y = np.array([3.0, 4.0], np.float32)
+    tf_x = tf.constant(np_x)
+    tf_y = tf.constant(np_y)
+    with tf.GradientTape() as tape:
+      tape.watch([tf_x, tf_y])
+      tf_outputs = tf_func(tf_x, tf_y)
+      tf_loss = tf.add_n([tf.reduce_sum(o) for o in tf_outputs])
+    tf_grads = tape.gradient(tf_loss, [tf_x, tf_y])
+
+    jax_func = self.variant(
+        tf2jax.convert_functional(
+            tf_func, np.zeros_like(np_x), np.zeros_like(np_y)
+        )
+    )
+    jax_outputs = jax_func(np_x, np_y)
+    self.assertLen(jax_outputs, 3)
+    tree.map_structure(self.assertAllClose, tuple(tf_outputs), jax_outputs)
+
+    def jax_loss(x, y):
+      return sum(jnp.sum(o) for o in jax_func(x, y))
+
+    jax_grads = self.variant(jax.grad(jax_loss, argnums=(0, 1)))(np_x, np_y)
+    tree.map_structure(self.assertAllClose, tuple(tf_grads), jax_grads)
+
+  @chex.variants(with_jit=True, without_jit=True)
+  def test_custom_gradient_with_internal_capture(self):
+    # The constant captured by the gradient function is supplied internally, so
+    # it must not also be counted as a positional argument.
+    captured = tf.constant([5.0, 6.0])
+
+    @tf.function
+    @tf.custom_gradient
+    def tf_func(x):
+      def grad(dy):
+        return dy * captured
+
+      return x * 2.0, grad
+
+    np_inputs = np.array([1.0, 2.0], np.float32)
+    tf_inputs = tf.constant(np_inputs)
+    with tf.GradientTape() as tape:
+      tape.watch(tf_inputs)
+      tf_outputs = tf_func(tf_inputs)
+      tf_grads = tape.gradient(tf_outputs, tf_inputs)
+
+    jax_func = self.variant(
+        tf2jax.convert_functional(tf_func, np.zeros_like(np_inputs))
+    )
+    jax_outputs = jax_func(np_inputs)
+    jax_grads = jax.grad(lambda x: jnp.sum(jax_func(x)))(np_inputs)
+
+    self.assertAllClose(tf_outputs, jax_outputs)
+    self.assertAllClose(tf_grads, jax_grads)
+
+  @chex.variants(with_jit=True, without_jit=True)
   def test_trainable(self):
     can_train = tf.Variable(3.14, trainable=True, name="can_train")
     not_train = tf.Variable(42., trainable=False, name="not_train")

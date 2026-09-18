@@ -889,14 +889,6 @@ class Jax2TfTest(test_util.TestCase):
         os.path.join(os.path.dirname(os.path.split(__file__)[0]), "test_data/custom_gradient_cubed")
     )
 
-    x = np.array(42.0, dtype=np.float32)
-    jax_fn = tf2jax.convert_functional(model.f, np.array(0.0, dtype=np.float32))
-    jax_fn = self.variant(jax_fn)
-    jax_y = jax_fn(x)
-    jax_dy_dx = jax.grad(jax_fn)(x)
-
-    # TODO(b/302195165) This has to happen after the convert, otherwise there
-    # is an input lookup error in the gradient function.
     x = tf.constant(42.0, dtype=tf.float32)
     with tf.GradientTape() as tape:
       tape.watch(x)
@@ -906,6 +898,11 @@ class Jax2TfTest(test_util.TestCase):
         with self.assertRaises(LookupError):
           _ = tape2.gradient(tf_y, x)
       tf_dy_dx = tape.gradient(tf_y, x)
+
+    jax_fn = tf2jax.convert_functional(model.f, np.array(0.0, dtype=np.float32))
+    jax_fn = self.variant(jax_fn)
+    jax_y = jax_fn(x.numpy())
+    jax_dy_dx = jax.grad(jax_fn)(x.numpy())
 
     self.assertAllClose(jax_y, tf_y)
     self.assertAllClose(jax_dy_dx, tf_dy_dx)
@@ -953,6 +950,118 @@ class Jax2TfTest(test_util.TestCase):
     jax_grads = jax.grad(jax_fn_too)(inputs)
     self.assertAllClose(expected_outputs, jax_outputs)
     self.assertAllClose(expected_grads, jax_grads)
+
+  @chex.variants(with_jit=True, without_jit=True)
+  def test_custom_gradient_multi_output_capture(self):
+    inputs = np.arange(6, dtype=np.float32).reshape(2, 3)
+
+    @tf.function(autograph=False)
+    def tf_fn(x):
+      a, b = tf.split(x, 2, axis=0)
+
+      @tf.custom_gradient
+      def inner(u):
+        def grad(dy):
+          return dy * tf.concat([2.0 * a, 3.0 * b], axis=0)
+
+        return u * 5.0, grad
+
+      return tf.reduce_sum(inner(x) + tf.concat([a, b], axis=0))
+
+    tf_x = tf.constant(inputs)
+    with tf.GradientTape() as tape:
+      tape.watch(tf_x)
+      expected_out = tf_fn(tf_x)
+    expected_grad = tape.gradient(expected_out, tf_x)
+
+    with config.override_config("convert_custom_gradient", True):
+      jax_fn = tf2jax.convert_functional(tf_fn, tf.TensorSpec.from_tensor(tf_x))
+
+    jax_fn = self.variant(jax_fn)
+    actual_out = jax_fn(inputs)
+    actual_grad = jax.grad(jax_fn)(inputs)
+    self.assertAllClose(expected_out.numpy(), actual_out)
+    self.assertAllClose(expected_grad.numpy(), actual_grad)
+
+  @chex.variants(without_jit=True, with_jit=True)
+  def test_custom_gradient_higher_order(self):
+    inputs = np.array(3.0, dtype=np.float32)
+    grad2_traced = False
+
+    @jax.custom_gradient
+    def scale(u):
+      def grad2(du):
+        nonlocal grad2_traced
+        grad2_traced = True
+        return du * 2.0
+
+      return u * 2.0, grad2
+
+    @jax.custom_gradient
+    def forward(x):
+      def grad(dy):
+        return dy * scale(x)
+
+      return x * x, grad
+
+    expected_outputs = forward(inputs)
+    expected_grads = jax.grad(forward)(inputs)
+    expected_grad2 = jax.grad(jax.grad(forward))(inputs)
+    grad2_traced = False
+
+    tf_forward = jax2tf.convert(self.variant(forward), with_gradient=True)
+    tf_forward = tf.function(tf_forward, autograph=False)
+
+    with config.override_config("convert_custom_gradient", True):
+      jax_forward = tf2jax.convert_functional(tf_forward, tf.zeros_like(inputs))
+    jax_forward = self.variant(jax_forward)
+
+    jax_outputs = jax_forward(inputs)
+    self.assertAllClose(expected_outputs, jax_outputs)
+    self.assertFalse(grad2_traced)
+
+    # First-order gradient must not trace the second-order custom gradient.
+    jax_grads = jax.grad(jax_forward)(inputs)
+    self.assertAllClose(expected_grads, jax_grads)
+    self.assertFalse(grad2_traced)
+
+    # Second-order gradient traces the second-order custom gradient on demand.
+    jax_grad2 = jax.grad(jax.grad(jax_forward))(inputs)
+    self.assertTrue(grad2_traced)
+    self.assertAllClose(expected_grad2, jax_grad2)
+
+  @chex.variants(without_jit=True, with_jit=True)
+  def test_custom_gradient_lazy_lowering(self):
+    inputs = np.array(3.0, dtype=np.float32)
+    grad_traced = False
+
+    @jax.custom_gradient
+    def forward(x):
+      def grad(dy):
+        nonlocal grad_traced
+        grad_traced = True
+        return dy * 2.0 * x
+
+      return x * x, grad
+
+    tf_forward = jax2tf.convert(self.variant(forward), with_gradient=True)
+    tf_forward = tf.function(tf_forward, autograph=False)
+
+    with config.override_config("convert_custom_gradient", True):
+      jax_forward = tf2jax.convert_functional(tf_forward, tf.zeros_like(inputs))
+    self.assertFalse(grad_traced)
+
+    jax_forward = self.variant(jax_forward)
+
+    # Forward evaluation must not trace or convert the custom gradient.
+    jax_outputs = jax_forward(inputs)
+    self.assertAllClose(forward(inputs), jax_outputs)
+    self.assertFalse(grad_traced)
+
+    # First order gradient traces and converts the custom gradient on demand.
+    jax_grads = jax.grad(jax_forward)(inputs)
+    self.assertTrue(grad_traced)
+    self.assertAllClose(jax.grad(forward)(inputs), jax_grads)
 
   @chex.variants(without_jit=True, with_jit=True)
   @parameterized.named_parameters(
