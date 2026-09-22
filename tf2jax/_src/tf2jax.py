@@ -192,8 +192,9 @@ class _LibraryFunction(NamedTuple):
   # Optional fields (mainly) used by gradient functions.
   input_specs: Optional[Tuple[tf.TensorSpec, ...]] = None
   output_specs: Optional[Tuple[tf.TensorSpec, ...]] = None
-  # If fn is a gradient function, this is the output specs for the original fn.
-  orig_fn_output_specs: Optional[Tuple[tf.TensorSpec, ...]] = None
+  # If fn is a gradient function, this is the number of outputs of the original
+  # fn, i.e. the number of leading `None`s returned by the gradient function.
+  num_orig_fn_outputs: Optional[int] = None
   # Whether an output is unmodified input to the function.
   output_is_input: Optional[Tuple[bool]] = None
   # Inputs corresponding to VarHandleOp
@@ -798,7 +799,7 @@ def _extract_subgraphs(graphdef, nodes, library):
       assert len(node.input) == len(output_node.inputs)
 
       # Inputs to the gradient function are fn(*args) + args + captured_args
-      num_outputs = len(grad_fn.orig_fn_output_specs)
+      num_outputs = grad_fn.num_orig_fn_outputs
       all_specs = [_TensorEdge(x.name) for x in grad_fn.input_specs]
       outputs = list(output_node.inputs[:num_outputs])
       inputs = list(output_node.inputs[num_outputs:len(node.input)])
@@ -1527,6 +1528,6 @@ def _convert_gradient_function(
       False,
       grad_input_specs,
       grad_output_specs,
-      grad_output_specs[:num_fn_outputs],
+      num_fn_outputs,
   )
   library.update({grad_fn_name: grad_fn})
