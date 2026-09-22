@@ -192,8 +192,9 @@ class _LibraryFunction(NamedTuple):
   # Optional fields (mainly) used by gradient functions.
   input_specs: Optional[Tuple[tf.TensorSpec, ...]] = None
   output_specs: Optional[Tuple[tf.TensorSpec, ...]] = None
-  # If fn is a gradient function, this is the output specs for the original fn.
-  orig_fn_output_specs: Optional[Tuple[tf.TensorSpec, ...]] = None
+  # If fn is a gradient function, this is the number of outputs of the original
+  # fn, i.e. the number of leading `None`s returned by the gradient function.
+  num_orig_fn_outputs: Optional[int] = None
   # Whether an output is unmodified input to the function.
   output_is_input: Optional[Tuple[bool]] = None
   # Inputs corresponding to VarHandleOp
@@ -215,6 +216,76 @@ class _LibraryFunction(NamedTuple):
     else:
       # Ignore parameters in inputs and outputs.
       return self.fn({}, *args, **kwargs)[0]
+
+
+class _LazyGradientFunction:
+  """A lazy wrapper around _LibraryFunction."""
+
+  def __init__(self, resolver: Callable[[], Optional[_LibraryFunction]]):
+    self._resolver = resolver
+    self._resolved = False
+    self._target: Optional[_LibraryFunction] = None
+
+  def _resolve(self) -> Optional[_LibraryFunction]:
+    if not self._resolved:
+      self._target = self._resolver()
+      self._resolved = True
+    return self._target
+
+  @property
+  def fn_builder(self) -> _CachedBuilder:
+    resolved = self._resolve()
+    assert resolved is not None
+    return resolved.fn_builder
+
+  @property
+  def require_rng(self) -> bool:
+    resolved = self._resolve()
+    return resolved.require_rng if resolved else False
+
+  @property
+  def input_specs(self) -> Optional[Tuple[tf.TensorSpec, ...]]:
+    resolved = self._resolve()
+    return resolved.input_specs if resolved else None
+
+  @property
+  def output_specs(self) -> Optional[Tuple[tf.TensorSpec, ...]]:
+    resolved = self._resolve()
+    return resolved.output_specs if resolved else None
+
+  @property
+  def num_orig_fn_outputs(self) -> Optional[int]:
+    resolved = self._resolve()
+    return resolved.num_orig_fn_outputs if resolved else None
+
+  @property
+  def output_is_input(self) -> Optional[Tuple[bool, ...]]:
+    resolved = self._resolve()
+    return resolved.output_is_input if resolved else None
+
+  @property
+  def variable_input_specs(self) -> Optional[Tuple[tf.TensorSpec, ...]]:
+    resolved = self._resolve()
+    return resolved.variable_input_specs if resolved else None
+
+  @property
+  def fn(self) -> Callable[..., Any]:
+    resolved = self._resolve()
+    assert resolved is not None
+    return resolved.fn
+
+  @property
+  def params(self) -> Optional[Mapping[str, ArrayLike]]:
+    resolved = self._resolve()
+    return resolved.params if resolved else None
+
+  def __call__(self, *args, **kwargs):
+    resolved = self._resolve()
+    assert resolved is not None
+    return resolved(*args, **kwargs)
+
+
+_AnyLibraryFunction = Union[_LibraryFunction, _LazyGradientFunction]
 
 
 def _unbox_named_args(
@@ -239,8 +310,12 @@ def _unbox_named_args(
 class _OpNode:
   """Represents an Op."""
 
-  def __init__(self, proto, library: Dict[str, _LibraryFunction],
-               node_map: Mapping[str, Any]):
+  def __init__(
+      self,
+      proto,
+      library: Dict[str, _AnyLibraryFunction],
+      node_map: Mapping[str, Any],
+  ):
     self.jax_func = ops.get_parser(proto.op)(proto)
     self.op = proto.op
     self.name = proto.name
@@ -338,6 +413,40 @@ def _toposort(
         child_counts[parent] -= 1
 
   return sorted_nodes[::-1]
+
+
+def _toposort_op_nodes(
+    nodes: Sequence[Union["_OpNode", "_Subgraph"]],
+) -> Tuple[Union["_OpNode", "_Subgraph"], ...]:
+  """Topologically sort a list of _OpNode and _Subgraph objects."""
+  node_map = {n.name: n for n in nodes}
+  deps = {}
+  dependents = collections.defaultdict(list)
+  for n in nodes:
+    node_deps = set(
+        inp.op_name
+        for inp in n.inputs + n.control_inputs
+        if inp.op_name in node_map
+    )
+    deps[n.name] = node_deps
+    for dep in node_deps:
+      dependents[dep].append(n.name)
+
+  ready = collections.deque([n for n in nodes if not deps[n.name]])
+  sorted_nodes = []
+  while ready:
+    curr = ready.popleft()
+    sorted_nodes.append(curr)
+    for dep_name in dependents[curr.name]:
+      deps[dep_name].remove(curr.name)
+      if not deps[dep_name]:
+        ready.append(node_map[dep_name])
+
+  if len(sorted_nodes) != len(nodes):
+    remaining = [n.name for n in nodes if deps[n.name]]
+    raise ValueError(f"Cycle detected among nodes: {remaining}")
+
+  return tuple(sorted_nodes)
 
 
 class Variable(np.ndarray):
@@ -610,7 +719,7 @@ class _Subgraph(NamedTuple):
   captures: Tuple[_TensorEdge, ...]
   outputs: Tuple[_TensorEdge, ...]
   output_node: _OpNode
-  grad_fn: _LibraryFunction
+  grad_fn: _AnyLibraryFunction
 
   @property
   def name(self) -> str:
@@ -647,16 +756,19 @@ class _Subgraph(NamedTuple):
       *,
       rng: jnp.ndarray,
   ) -> Tuple[Tuple[jnp.ndarray, ...], Mapping[str, jnp.ndarray]]:
-    grad_inputs = tuple([_TensorEdge(v.name) for v in self.grad_fn.input_specs])  # pyrefly: ignore[not-iterable]
+    grad_inputs = tuple(
+        [_TensorEdge.from_string(v.name) for v in self.grad_fn.input_specs]  # pyrefly: ignore[not-iterable]
+    )
 
-    @jax.custom_gradient
-    def fn(*args):
+    def _eval_subgraph(args):
       eval_cache = _EvaluationCache(
           self.subgraph, named_args, self.output_node.inputs + grad_inputs)
       assert len(args) == len(self.unique_inputs)
       for inp, val in safe_zip(self.unique_inputs, args):
         if isinstance(eval_cache.outputs[inp.op_name], list):
-          eval_cache.outputs[inp.op_name][inp.idx] = val
+          old_outputs = list(eval_cache.outputs[inp.op_name])
+          old_outputs[inp.idx] = val
+          eval_cache.outputs[inp.op_name] = old_outputs
         elif isinstance(eval_cache.outputs[inp.op_name], tuple):
           old_outputs = eval_cache.outputs[inp.op_name]
           eval_cache.outputs[inp.op_name] = (
@@ -684,23 +796,65 @@ class _Subgraph(NamedTuple):
 
         eval_cache.free_inputs(node)
 
-      # dy is the gradients for fn(*args) + args, i.e. inputs to IdentityN
-      def grad_fn(dy):
-        assert len(dy) == len(self.output_node.inputs)
+      return eval_cache
 
-        captured_inputs = tuple(grad_inputs[len(dy):])
-        named_captures = [
-            (v.op_name, eval_cache.outputs[v.op_name]) for v in captured_inputs
-        ]
-        captures = _unbox_named_args(named_captures, captured_inputs)
-        grad_args = dy + captures
+    @jax.custom_vjp
+    def fn(*args):
+      eval_cache = _eval_subgraph(args)
+      return eval_cache.outputs[self.output_node.name]
 
-        dx = self.grad_fn(*grad_args)
-        assert len(dx) == len(self.unique_inputs)
+    def fn_fwd(*args):
+      # During higher-order autodiff (e.g. grad(grad(f))), JAX traces through
+      # fn_fwd to differentiate residuals passed to fn_bwd. Stop gradients into
+      # _eval_subgraph so JAX does not attempt to differentiate through
+      # XlaCallModule (mhlo_apply), while keeping un-stopped `args` in `lookup`
+      # below so captured inputs retain their tracers for fn_bwd.
+      primal_args = tree.map_structure(jax.lax.stop_gradient, args)
+      eval_cache = _eval_subgraph(primal_args)
+      outputs = eval_cache.outputs[self.output_node.name]
 
-        return dx
+      lookup = {}
+      if not isinstance(outputs, (tuple, list)):
+        sub_outputs = (outputs,)
+      else:
+        sub_outputs = tuple(outputs)
+      for inp, val in safe_zip(self.output_node.inputs, sub_outputs):
+        lookup[inp] = val
+      for inp, val in safe_zip(self.unique_inputs, args):
+        lookup[inp] = val
 
-      return eval_cache.outputs[self.output_node.name], grad_fn
+      captured_inputs = tuple(grad_inputs[len(self.output_node.inputs) :])
+      captures = []
+      for v in captured_inputs:
+        if v in lookup:
+          captures.append(lookup[v])
+        elif v.op_name in eval_cache.outputs:
+          val = eval_cache.outputs[v.op_name]
+          captures.append(val[v.idx] if isinstance(val, (list, tuple)) else val)
+        else:
+          raise KeyError(
+              f"Captured input {v} not found in outputs, args, or eval_cache."
+          )
+
+      return outputs, tuple(captures)
+
+    def fn_bwd(res, dy):
+      if not isinstance(dy, tuple):
+        dy = (dy,)
+      assert len(dy) == len(self.output_node.inputs)
+
+      captures = res
+      grad_args = dy + tuple(captures)
+
+      dx = self.grad_fn(*grad_args)
+      assert len(dx) == len(self.function_inputs)
+      num_captures = len(self.unique_inputs) - len(self.function_inputs)
+      dx = tuple(dx) + (None,) * num_captures
+      assert len(dx) == len(self.unique_inputs)
+
+      return dx
+
+    fn.defvjp(fn_fwd, fn_bwd)
 
     args_map = dict(named_args)
     fn_named_args = [
@@ -791,15 +945,15 @@ def _extract_subgraphs(graphdef, nodes, library):
       grad_fn = library[grad_fn_name]
 
       # The gradient is not available (not serialized in a saved model?)
-      if grad_fn is None:
+      if grad_fn is None or grad_fn.input_specs is None:
         continue
 
       output_node = op_map[node.name][1]
       assert len(node.input) == len(output_node.inputs)
 
       # Inputs to the gradient function are fn(*args) + args + captured_args
-      num_outputs = len(grad_fn.orig_fn_output_specs)
-      all_specs = [_TensorEdge(x.name) for x in grad_fn.input_specs]
+      num_outputs = grad_fn.num_orig_fn_outputs
+      all_specs = [_TensorEdge.from_string(x.name) for x in grad_fn.input_specs]
       outputs = list(output_node.inputs[:num_outputs])
       inputs = list(output_node.inputs[num_outputs:len(node.input)])
       captured_inputs = all_specs[len(node.input):]
@@ -816,20 +970,21 @@ def _extract_subgraphs(graphdef, nodes, library):
 
       # Separate internal and external captures. Internal captures are found in
       # the subgraph. External captures are found in outer graph.
-      unused_captures = []
       internal_captures = []
       external_captures = []
       used_inputs = set(
           sum([op_map[n][1].inputs for n in subgraph], ()) + output_node.inputs)
       for inp in captured_inputs:
-        is_internal = all(
-            [x.op_name in subgraph for x in op_map[inp.op_name][1].inputs])
-        if inp not in used_inputs:
-          unused_captures.append(inp)
-        elif is_internal:
+        is_internal = bool(op_map[inp.op_name][1].inputs) and all(
+            [x.op_name in subgraph for x in op_map[inp.op_name][1].inputs]
+        )
+        if inp in used_inputs and is_internal:
           internal_captures.append(inp)
         else:
           external_captures.append(inp)
+
+      excluded = set([x.op_name for x in inputs + external_captures])
+      subgraph = subgraph.difference(excluded)
 
       # Find side-effects, i.e. nodes that depends on the subgraph but do not
       # feed into the subgraph outputs, e.g. shape check asserts from jax2tf.
@@ -848,13 +1003,12 @@ def _extract_subgraphs(graphdef, nodes, library):
         if op_map[x][1].op != "Placeholder":
           side_effect_deps.add(x)
       # Merge side-effects and dependencies into the subgraph.
-      subgraph = subgraph | side_effects | side_effect_deps
+      subgraph = (subgraph | side_effects | side_effect_deps).difference(
+          excluded
+      )
       output_node.control_inputs = output_node.control_inputs + tuple(
           _TensorEdge(op_name=x, is_control=True) for x in side_effects
       )
-
-      excluded = inputs + unused_captures + external_captures
-      subgraph = subgraph.difference(set([x.op_name for x in excluded]))
       sub_nodes = [op_map[x] for x in subgraph]
       sub_nodes = [x for _, x in sorted(sub_nodes)]
       subgraphs[grad_fn_name] = _Subgraph(
@@ -981,7 +1135,7 @@ def _convert(
     captured_input_names: Optional[Tuple[str, ...]] = None,
     variable_map: Optional[Mapping[str, tf.Variable]] = None,
     constants: Optional[Mapping[str, jnp.ndarray]] = None,
-    library: Optional[Dict[str, _LibraryFunction]] = None,
+    library: Optional[Dict[str, _AnyLibraryFunction]] = None,
 ) -> Tuple[Callable[..., Any], Mapping[str, Variable]]:
   """Convert a GraphDef to a Jax function.
 
@@ -1144,10 +1298,43 @@ def _convert(
   if config.get_config("infer_relu_from_jax2tf"):
     _infer_relu_from_jax2tf(nodes)
 
-  if config.get_config("convert_custom_gradient"):
-    subgraphs = _extract_subgraphs(graphdef, nodes, library)
-    for _, subgraph in subgraphs.items():
-      nodes = subgraph.rewrite(nodes)
+  saved_config = config.copy_config()
+  has_custom_gradient = config.get_config("convert_custom_gradient") and any(
+      _contains_custom_gradient(n) for n in graphdef.node
+  )
+  rewritten_nodes = None
+
+  def _get_rewritten_nodes():
+    nonlocal rewritten_nodes
+    if rewritten_nodes is None:
+      with config.override_configs(saved_config):
+        grad_capture_names = []
+        for node in graphdef.node:
+          if _contains_custom_gradient(node) and node.attr is not None:
+            grad_fn_name = str(node.attr["_gradient_op_type"].s, "utf-8")
+            grad_fn = library.get(grad_fn_name)
+            if grad_fn is not None and grad_fn.input_specs is not None:
+              for spec in grad_fn.input_specs[len(node.input) :]:
+                op_name = _TensorEdge.from_string(spec.name).op_name
+                if op_name in node_map:
+                  grad_capture_names.append(op_name)
+        if grad_capture_names:
+          end_nodes = tuple(
+              dict.fromkeys(tuple(output_names) + tuple(grad_capture_names))
+          )
+          rewritten = [
+              _OpNode(node, library, node_map)
+              for node in _toposort(node_map, end_nodes)
+          ]
+        else:
+          rewritten = list(nodes)
+        subgraphs = _extract_subgraphs(graphdef, rewritten, library)
+        for _, subgraph in subgraphs.items():
+          rewritten = subgraph.rewrite(rewritten)
+        if subgraphs:
+          rewritten = _toposort_op_nodes(rewritten)
+        rewritten_nodes = rewritten
+    return rewritten_nodes
 
   def jax_func(
       params: Mapping[str, jnp.ndarray],
@@ -1222,41 +1409,80 @@ def _convert(
     if missing_params:
       raise ValueError(f"Some parameters are missing, {missing_params}.")
 
-    full_inputs = inputs + tuple(
-        [all_params[var_by_node.get(v, v)] for v in captured_input_names])
-    full_inputs = list(
-        safe_zip(input_names + captured_input_names, full_inputs)
+    full_input_vals = inputs + tuple(
+        [all_params[var_by_node.get(v, v)] for v in captured_input_names]
     )
 
-    if num_rng_required:
-      rng_keys = list(jax.random.split(rng, num_rng_required))  # pyrefly: ignore[bad-argument-type]
+    def _run_nodes(node_list, input_vals, rng_val):
+      full_inputs = list(
+          safe_zip(input_names + captured_input_names, input_vals)
+      )
+      if num_rng_required:
+        rng_keys = list(jax.random.split(rng_val, num_rng_required))  # pyrefly: ignore[bad-argument-type]
+      else:
+        rng_keys = []
+
+      updated_param_names = set()
+      eval_cache = _EvaluationCache(node_list, full_inputs, output_args)
+      for node in node_list:
+        if node.name not in eval_cache.outputs:
+          # Double-check control inputs.
+          for inp in node.control_inputs:
+            if inp.op_name not in eval_cache.outputs:
+              raise ValueError(
+                  f"Control dependency {inp} not executed for node"
+                  f" `{node.name}`"
+              )
+          collected_inputs = [
+              (v.op_name, eval_cache.outputs[v.op_name]) for v in node.inputs
+          ]
+          sub_rng = rng_keys.pop() if node.require_rng else None
+          eval_cache.outputs[node.name], updated_params = node(
+              collected_inputs, rng=sub_rng
+          )  # pyrefly: ignore[bad-argument-type]
+          # Assign variables.
+          for var_name, var_val in updated_params.items():
+            eval_cache.outputs[var_name] = var_val
+            updated_param_names.add(var_name)
+
+          eval_cache.free_inputs(node)
+
+      lost_params = [v for v in updated_param_names if v not in var_by_node]
+      if lost_params:
+        raise ValueError(f"Some updated parameters are lost, {lost_params}.")
+
+      t_outputs = tuple([eval_cache.outputs[k.op_name] for k in output_args])
+      t_outputs = [v for v in t_outputs if v is not _EMPTY_RETURN_VALUE]
+      n_params = {
+          var_name: eval_cache.outputs[node_by_var[var_name]]
+          for var_name in params.keys()
+      }
+      return t_outputs, n_params
+
+    if has_custom_gradient and not num_rng_required:
+
+      @jax.custom_vjp
+      def _eval_with_custom_grad(vals):
+        return _run_nodes(nodes, vals, None)
+
+      def _eval_with_custom_grad_fwd(vals):
+        return jax.vjp(
+            lambda v: _run_nodes(_get_rewritten_nodes(), v, None), vals
+        )
+
+      def _eval_with_custom_grad_bwd(vjp_fn, cotangents):
+        return vjp_fn(cotangents)
+
+      _eval_with_custom_grad.defvjp(
+          _eval_with_custom_grad_fwd, _eval_with_custom_grad_bwd
+      )
+      tensor_outputs, new_params = _eval_with_custom_grad(full_input_vals)
+    elif has_custom_gradient:
+      tensor_outputs, new_params = _run_nodes(
+          _get_rewritten_nodes(), full_input_vals, rng
+      )
     else:
-      rng_keys = []
-
-    updated_param_names = set()
-    eval_cache = _EvaluationCache(nodes, full_inputs, output_args)
-    for node in nodes:
-      if node.name not in eval_cache.outputs:
-        # Double-check control inputs.
-        for inp in node.control_inputs:
-          if inp.op_name not in eval_cache.outputs:
-            raise ValueError(
-                f"Control dependency {inp} not executed for node `{node.name}`")
-        collected_inputs = [
-            (v.op_name, eval_cache.outputs[v.op_name]) for v in node.inputs
-        ]
-        sub_rng = rng_keys.pop() if node.require_rng else None
-        eval_cache.outputs[node.name], updated_params = node(
-            collected_inputs, rng=sub_rng)  # pyrefly: ignore[bad-argument-type]
-        # Assign variables.
-        for var_name, var_val in updated_params.items():
-          eval_cache.outputs[var_name] = var_val
-          updated_param_names.add(var_name)
-
-        eval_cache.free_inputs(node)
-
-    tensor_outputs = tuple([eval_cache.outputs[k.op_name] for k in output_args])
-    tensor_outputs = [v for v in tensor_outputs if v is not _EMPTY_RETURN_VALUE]
+      tensor_outputs, new_params = _run_nodes(nodes, full_input_vals, rng)
 
     # Merge the tensor and non-tensor outputs.
     output_idx = 0
@@ -1270,23 +1496,13 @@ def _convert(
     assert output_idx == len(tensor_outputs)
     collected_outputs = tree.unflatten_as(structured_outputs, flat_outputs)
 
-    # Parameters after any assignment.
-    new_params = {
-        var_name: eval_cache.outputs[node_by_var[var_name]]
-        for var_name in params.keys()
-    }
-
-    lost_params = [v for v in updated_param_names if v not in var_by_node]
-    if lost_params:
-      raise ValueError(f"Some updated parameters are lost, {lost_params}.")
-
     return collected_outputs, new_params  # pytype: disable=bad-return-type  # py311-upgrade
 
   return jax_func, variables
 
 
 def _convert_library_function(
-    proto, library: Optional[Dict[str, _LibraryFunction]]
+    proto, library: Optional[Dict[str, _AnyLibraryFunction]]
 ) -> _LibraryFunction:
   """Convert a FunctionDef."""
   input_nodes = []
@@ -1394,7 +1610,7 @@ def _filter_nodes(
 
 def _convert_all_gradient_functions(
     graph: Any,
-    library: Dict[str, _LibraryFunction | None],
+    library: Dict[str, Optional[_AnyLibraryFunction]],
     *,
     recurse: bool = True,
 ) -> None:
@@ -1410,7 +1626,7 @@ def _convert_all_gradient_functions(
 def _convert_gradient_function(
     proto: tf.compat.v1.NodeDef,
     graph: Any,
-    library: Dict[str, Optional[_LibraryFunction]],
+    library: Dict[str, Optional[_AnyLibraryFunction]],
 ) -> None:
   """Convert a custom_gradient function."""
   op = graph.as_graph_element(proto.name)
@@ -1427,106 +1643,127 @@ def _convert_gradient_function(
     library[grad_fn_name] = None
     return
 
-  @tf.function(autograph=False)
-  def tf_grad_fn(*grad_args, **grad_kwargs):
-    fn = tf_ops.gradient_registry.lookup(grad_fn_name)
-    return fn(None, *grad_args, **grad_kwargs)
+  def resolve() -> Optional[_LibraryFunction]:
+    @tf.function(autograph=False)
+    def tf_grad_fn(*grad_args, **grad_kwargs):
+      fn = tf_ops.gradient_registry.lookup(grad_fn_name)
+      return fn(None, *grad_args, **grad_kwargs)
 
-  try:
-    # TODO(b/301726317) Use the escape hatch for call_tf as this may call
-    # jax2tf inside of JAX transformations, which is normally disallowed.
-    # pylint: disable=g-import-not-at-top
-    from jax.experimental.jax2tf import jax2tf as jax2tf_internal  # pytype: disable=import-error
-    # pylint: enable=g-import-not-at-top
-    inside_call_tf = jax2tf_internal.inside_call_tf
-
-    # TODO(b/301748972) Hack to support nesting of get_concrete_function in the
-    # presence of polymorphic inputs and graph mode serialization.
-    # pylint: disable=protected-access
-    @contextlib.contextmanager
-    def clear_shape_env():
-      prev_shape_env = jax2tf_internal._thread_local_state.shape_env
-      jax2tf_internal._thread_local_state.shape_env = ()
-      try:
-        yield
-      finally:
-        jax2tf_internal._thread_local_state.shape_env = prev_shape_env
-    # pylint: enable=protected-access
-  except ImportError:
-    inside_call_tf = contextlib.nullcontext
-    clear_shape_env = contextlib.nullcontext
-
-  # Alternatively, try running get_concrete_function in a separate thread?
-  with inside_call_tf(), clear_shape_env():
     try:
-      concrete_tf_grad_fn = tf_grad_fn.get_concrete_function(*input_specs)
-    except NotImplementedError as e:
-      logging.info(
-          "Failed to get concrete function for %s: %s", grad_fn_name, e
-      )
-      library[grad_fn_name] = None
-      return
+      # TODO(b/301726317) Use the escape hatch for call_tf as this may call
+      # jax2tf inside of JAX transformations, which is normally disallowed.
+      # pylint: disable=g-import-not-at-top
+      from jax.experimental.jax2tf import jax2tf as jax2tf_internal  # pytype: disable=import-error
+      # pylint: enable=g-import-not-at-top
+      inside_call_tf = jax2tf_internal.inside_call_tf
 
-  logging.info("Converting gradient function %s", grad_fn_name)
-  grad_inputs = concrete_tf_grad_fn.inputs
-  grad_captured_inputs = concrete_tf_grad_fn.captured_inputs
-  num_flat_args = len(grad_inputs) - len(grad_captured_inputs)
-  func_variables = {v.handle.ref(): v for v in concrete_tf_grad_fn.variables}
+      # TODO(b/301748972) Hack to support nesting of get_concrete_function in
+      # the presence of polymorphic inputs and graph mode serialization.
+      # pylint: disable=protected-access
+      @contextlib.contextmanager
+      def clear_shape_env():
+        prev_shape_env = jax2tf_internal._thread_local_state.shape_env
+        jax2tf_internal._thread_local_state.shape_env = ()
+        try:
+          yield
+        finally:
+          jax2tf_internal._thread_local_state.shape_env = prev_shape_env
 
-  # Gradient function can capture tensors in the outer function. Move them
-  # into the arguments of the gradient function for conversion to JAX.
-  variable_map = {}
-  constant_map = {}
-  external_capture_specs = []
-  internal_capture_names = []
-  for inp, cap in safe_zip(grad_inputs[num_flat_args:], grad_captured_inputs):
-    if cap.dtype == tf.resource:
-      variable_map[inp.op.name] = func_variables[cap.ref()]
-      internal_capture_names.append(inp.op.name)
-    elif hasattr(cap, "numpy"):
-      constant_map[inp.op.name] = cap.numpy()
-      internal_capture_names.append(inp.op.name)
-    else:
-      external_capture_specs.append(tf.TensorSpec.from_tensor(cap))
+      # pylint: enable=protected-access
+    except ImportError:
+      inside_call_tf = contextlib.nullcontext
+      clear_shape_env = contextlib.nullcontext
 
-  structured_grad_input_specs = tree.map_structure(tf.TensorSpec.from_tensor,
-                                                   concrete_tf_grad_fn.inputs)
-  structured_grad_input_specs = (structured_grad_input_specs, {})
-  grad_input_specs = input_specs + tuple(external_capture_specs)
-  grad_structured_outputs = tuple(
-      itertools.dropwhile(lambda x: x is None,
-                          concrete_tf_grad_fn.structured_outputs))
-  grad_output_specs = tuple([
-      tf.TensorSpec.from_tensor(x) for x in grad_structured_outputs
-  ])
-  # Nones correspond to the outputs of the original function.
-  num_fn_outputs = (
-      len(concrete_tf_grad_fn.structured_outputs) -
-      len(grad_structured_outputs))
-  signature = inspect.Signature(
-      (inspect.Parameter("grad_args", inspect.Parameter.VAR_POSITIONAL),))
+    # Alternatively, try running get_concrete_function in a separate thread?
+    with inside_call_tf(), clear_shape_env():
+      try:
+        concrete_tf_grad_fn = tf_grad_fn.get_concrete_function(*input_specs)
+      except NotImplementedError as e:
+        logging.info(
+            "Failed to get concrete function for %s: %s", grad_fn_name, e
+        )
+        return None
 
-  def builder():
-    _convert_all_gradient_functions(
-        concrete_tf_grad_fn.graph, library, recurse=False)
-    jax_grad_fn, jax_grad_params = _convert(
-        concrete_tf_grad_fn.graph.as_graph_def(),
-        signature,
-        structured_grad_input_specs,
-        grad_output_specs,
-        captured_input_names=tuple(internal_capture_names),
-        variable_map=variable_map,
-        constants=constant_map,
-        library=library,  # pyrefly: ignore[bad-argument-type]
+    logging.info("Converting gradient function %s", grad_fn_name)
+    grad_inputs = concrete_tf_grad_fn.inputs
+    grad_captured_inputs = concrete_tf_grad_fn.captured_inputs
+    num_flat_args = len(grad_inputs) - len(grad_captured_inputs)
+    func_variables = {v.handle.ref(): v for v in concrete_tf_grad_fn.variables}
+
+    # Gradient function can capture tensors in the outer function. Move them
+    # into the arguments of the gradient function for conversion to JAX.
+    variable_map = {}
+    constant_map = {}
+    external_capture_specs = []
+    internal_capture_names = []
+    for inp, cap in safe_zip(grad_inputs[num_flat_args:], grad_captured_inputs):
+      if cap.dtype == tf.resource:
+        variable_map[inp.op.name] = func_variables[cap.ref()]
+        internal_capture_names.append(inp.op.name)
+      elif hasattr(cap, "numpy"):
+        constant_map[inp.op.name] = cap.numpy()
+        internal_capture_names.append(inp.op.name)
+      else:
+        external_capture_specs.append(
+            tf.TensorSpec.from_tensor(cap, name=cap.name)
+        )
+
+    # Internal captures (e.g. constants hoisted out of the gradient function)
+    # are already supplied via `captured_input_names`, so they must be excluded
+    # here. Otherwise they are counted both as positional arguments and as
+    # captures, and the caller is asked for an argument it has no way to
+    # provide.
+    structured_grad_input_specs = tree.map_structure(
+        tf.TensorSpec.from_tensor,
+        [
+            v
+            for v in grad_inputs
+            if v.op.name not in set(internal_capture_names)
+        ],
     )
-    return jax_grad_fn, jax_grad_params
+    structured_grad_input_specs = (structured_grad_input_specs, {})
+    grad_input_specs = tuple(
+        tf.TensorSpec.from_tensor(v, name=v.name) for v in op.inputs
+    ) + tuple(external_capture_specs)
+    grad_structured_outputs = tuple(
+        itertools.dropwhile(
+            lambda x: x is None, concrete_tf_grad_fn.structured_outputs
+        )
+    )
+    grad_output_specs = tuple(
+        [tf.TensorSpec.from_tensor(x) for x in grad_structured_outputs]
+    )
+    # Nones correspond to the outputs of the original function.
+    num_fn_outputs = len(concrete_tf_grad_fn.structured_outputs) - len(
+        grad_structured_outputs
+    )
+    signature = inspect.Signature((
+        inspect.Parameter("grad_args", inspect.Parameter.VAR_POSITIONAL),
+    ))
 
-  builder_fn = _CachedBuilder(builder, config.copy_config())
-  grad_fn = _LibraryFunction(
-      builder_fn,
-      False,
-      grad_input_specs,
-      grad_output_specs,
-      grad_output_specs[:num_fn_outputs],
-  )
-  library.update({grad_fn_name: grad_fn})
+    def builder():
+      _convert_all_gradient_functions(
+          concrete_tf_grad_fn.graph, library, recurse=True
+      )
+      jax_grad_fn, jax_grad_params = _convert(
+          concrete_tf_grad_fn.graph.as_graph_def(),
+          signature,
+          structured_grad_input_specs,
+          grad_output_specs,
+          captured_input_names=tuple(internal_capture_names),
+          variable_map=variable_map,
+          constants=constant_map,
+          library=library,  # pyrefly: ignore[bad-argument-type]
+      )
+      return jax_grad_fn, jax_grad_params
+
+    builder_fn = _CachedBuilder(builder, config.copy_config())
+    return _LibraryFunction(
+        builder_fn,
+        False,
+        grad_input_specs,
+        grad_output_specs,
+        num_fn_outputs,
+    )
+
+  library[grad_fn_name] = _LazyGradientFunction(resolve)
