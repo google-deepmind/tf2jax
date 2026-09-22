@@ -712,7 +712,7 @@ class _Subgraph(NamedTuple):
 
   def rewrite(
       self,
-      nodes: Sequence[_OpNode]) -> Tuple[Union["_Subgraph", _OpNode], ...]:
+      nodes: Sequence[Union["_Subgraph", _OpNode]]) -> Tuple[Union["_Subgraph", _OpNode], ...]:
     """Remove subgraph from the main graph."""
     new_nodes = []
     processed = []
@@ -724,12 +724,27 @@ class _Subgraph(NamedTuple):
         if node == self.output_node:
           new_nodes.append(self)
       else:
-        # Rewire control inputs to point to the subgraph.
-        new_control_inputs = tuple(
-            v._replace(op_name=self.name) if v.op_name in subgraph_map else v
-            for v in node.control_inputs
-        )
-        node.control_inputs = new_control_inputs
+        try:
+          # "readonly_ci_prop" is True only when the type object of
+          # "node" contains an attribute "control_inputs", of which
+          # the value refers to another object having an attribute
+          # "fset" set to None
+          # => "control_inputs" behaves as a readonly property
+          readonly_ci_prop = type(node).control_inputs.fset is None
+        except AttributeError:
+          # If any of attribute read attemps above triggers
+          # "AttributeError"
+          # => control_inputs is not a property
+          readonly_ci_prop = False
+
+        if not readonly_ci_prop:
+          # Rewire control inputs to point to the subgraph.
+          new_control_inputs = tuple(
+              v._replace(op_name=self.name) if v.op_name in subgraph_map else v
+              for v in node.control_inputs
+          )
+          node.control_inputs = new_control_inputs
+
         new_nodes.append(node)
 
     assert len(processed) == len(subgraph), (len(processed), len(subgraph))
