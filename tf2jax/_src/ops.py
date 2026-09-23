@@ -66,12 +66,30 @@ def _get_jax_op(
   return wrapped
 
 
+def _get_comparison_op(jax_op: Callable[..., Any]) -> Callable[..., Any]:
+  """For wrapping comparison ops that require incompatible_shape_error=True."""
+
+  def wrapped(proto):
+    _check_attrs(proto, {"T", "incompatible_shape_error"})
+    if (
+        "incompatible_shape_error" in proto.attr
+        and not proto.attr["incompatible_shape_error"].b
+    ):
+      raise ValueError(
+          f"incompatible_shape_error=False in {proto.op} is not yet supported."
+      )
+    return jax_op
+
+  return wrapped
+
+
 _jax_ops = {
     "Abs": _get_jax_op(anp.abs_, {"T"}),
     "Add": _get_jax_op(anp.add, {"T"}),
     "AddN": _get_jax_op(
         lambda *args: anp.sum_(anp.stack(args, axis=0), axis=0, keepdims=False),
-        {"T", "N"}),
+        {"T", "N"},
+    ),
     "AddV2": _get_jax_op(anp.add, {"T"}),
     "ArgMax": _get_jax_op(jnp.argmax, {"T", "Tidx", "output_type"}),
     "ArgMin": _get_jax_op(jnp.argmin, {"T", "Tidx", "output_type"}),
@@ -96,20 +114,38 @@ _jax_ops = {
     "Digamma": _get_jax_op(jax.lax.digamma, {"T"}),
     "Div": _get_jax_op(anp.divide, {"T"}),
     "Elu": _get_jax_op(jax.nn.elu, {"T"}),
-    "Equal": _get_jax_op(anp.equal, {"T", "incompatible_shape_error"}),
+    "Equal": _get_comparison_op(anp.equal),
     "Erf": _get_jax_op(jax.lax.erf, {"T"}),
     "Erfc": _get_jax_op(jax.lax.erfc, {"T"}),
     "Erfinv": _get_jax_op(jax.lax.erf_inv, {"T"}),
     "Exp": _get_jax_op(jnp.exp, {"T"}),
     "Expm1": _get_jax_op(jnp.expm1, {"T"}),
     "FFT": _get_jax_op(
-        functools.partial(jnp.fft.fftn, axes=(-1,)), {"Tcomplex"}),
+        functools.partial(jnp.fft.fftn, axes=(-1,)), {"Tcomplex"}
+    ),
     "FFT2D": _get_jax_op(
-        functools.partial(jnp.fft.fftn, axes=(-2, -1,)), {"Tcomplex"}),
+        functools.partial(
+            jnp.fft.fftn,
+            axes=(
+                -2,
+                -1,
+            ),
+        ),
+        {"Tcomplex"},
+    ),
     "FresnelCos": _get_jax_op(lambda x: jax.scipy.special.fresnel(x)[1], {"T"}),
     "FresnelSin": _get_jax_op(lambda x: jax.scipy.special.fresnel(x)[0], {"T"}),
     "FFT3D": _get_jax_op(
-        functools.partial(jnp.fft.fftn, axes=(-3, -2, -1,)), {"Tcomplex"}),
+        functools.partial(
+            jnp.fft.fftn,
+            axes=(
+                -3,
+                -2,
+                -1,
+            ),
+        ),
+        {"Tcomplex"},
+    ),
     "Floor": _get_jax_op(jnp.floor, {"T"}),
     "FloorMod": _get_jax_op(anp.mod, {"T"}),
     "FloorDiv": _get_jax_op(anp.floor_divide, {"T"}),
@@ -117,19 +153,53 @@ _jax_ops = {
     "GreaterEqual": _get_jax_op(anp.greater_equal, {"T"}),
     "Identity": _get_jax_op(lambda x: x, {"T"}),
     "IFFT": _get_jax_op(
-        functools.partial(jnp.fft.ifftn, axes=(-1,)), {"Tcomplex"}),
+        functools.partial(jnp.fft.ifftn, axes=(-1,)), {"Tcomplex"}
+    ),
     "IFFT2D": _get_jax_op(
-        functools.partial(jnp.fft.ifftn, axes=(-2, -1,)), {"Tcomplex"}),
+        functools.partial(
+            jnp.fft.ifftn,
+            axes=(
+                -2,
+                -1,
+            ),
+        ),
+        {"Tcomplex"},
+    ),
     "IFFT3D": _get_jax_op(
-        functools.partial(jnp.fft.ifftn, axes=(-3, -2, -1,)), {"Tcomplex"}),
+        functools.partial(
+            jnp.fft.ifftn,
+            axes=(
+                -3,
+                -2,
+                -1,
+            ),
+        ),
+        {"Tcomplex"},
+    ),
     "IRFFT": _get_jax_op(
-        functools.partial(jnp.fft.irfftn, axes=(-1,)), {"Tcomplex", "Treal"}),
+        functools.partial(jnp.fft.irfftn, axes=(-1,)), {"Tcomplex", "Treal"}
+    ),
     "IRFFT2D": _get_jax_op(
         functools.partial(
-            jnp.fft.irfftn, axes=(-2, -1,)), {"Tcomplex", "Treal"}),
+            jnp.fft.irfftn,
+            axes=(
+                -2,
+                -1,
+            ),
+        ),
+        {"Tcomplex", "Treal"},
+    ),
     "IRFFT3D": _get_jax_op(
         functools.partial(
-            jnp.fft.irfftn, axes=(-3, -2, -1,)), {"Tcomplex", "Treal"}),
+            jnp.fft.irfftn,
+            axes=(
+                -3,
+                -2,
+                -1,
+            ),
+        ),
+        {"Tcomplex", "Treal"},
+    ),
     "Igamma": _get_jax_op(jax.lax.igamma, {"T"}),
     "Igammac": _get_jax_op(jax.lax.igammac, {"T"}),
     "Imag": _get_jax_op(jax.lax.imag, {"T", "Tout"}),
@@ -138,8 +208,8 @@ _jax_ops = {
     "InvertPermutation": _get_jax_op(anp.invert_permutation, {"T"}),
     "L2Loss": _get_jax_op(lambda x: 0.5 * jnp.sum(jnp.square(x)), {"T"}),
     "LeftShift": _get_jax_op(jnp.left_shift, {"T"}),
-    "Less": _get_jax_op(anp.less, {"T", "incompatible_shape_error"}),
-    "LessEqual": _get_jax_op(anp.less_equal, {"T", "incompatible_shape_error"}),
+    "Less": _get_comparison_op(anp.less),
+    "LessEqual": _get_comparison_op(anp.less_equal),
     "Lgamma": _get_jax_op(jax.lax.lgamma, {"T"}),
     "Log": _get_jax_op(jnp.log, {"T"}),
     "Log1p": _get_jax_op(jnp.log1p, {"T"}),
@@ -151,7 +221,7 @@ _jax_ops = {
     "Mul": _get_jax_op(anp.multiply, {"T"}),
     "Neg": _get_jax_op(anp.negative, {"T"}),
     "NoOp": _get_jax_op(lambda: _EMPTY_RETURN_VALUE, set({})),
-    "NotEqual": _get_jax_op(anp.not_equal, {"T", "incompatible_shape_error"}),
+    "NotEqual": _get_comparison_op(anp.not_equal),
     "OnesLike": _get_jax_op(jnp.ones_like, {"T"}),
     "PopulationCount": _get_jax_op(jax.lax.population_count, {"T"}),
     "Pow": _get_jax_op(anp.power, {"T"}),
@@ -164,13 +234,29 @@ _jax_ops = {
     "Relu6": _get_jax_op(jax.nn.relu6, {"T"}),
     "ReverseV2": _get_jax_op(anp.flip, {"T", "Tidx"}),
     "RFFT": _get_jax_op(
-        functools.partial(jnp.fft.rfftn, axes=(-1,)), {"Tcomplex", "Treal"}),
+        functools.partial(jnp.fft.rfftn, axes=(-1,)), {"Tcomplex", "Treal"}
+    ),
     "RFFT2D": _get_jax_op(
         functools.partial(
-            jnp.fft.rfftn, axes=(-2, -1,)), {"Tcomplex", "Treal"}),
+            jnp.fft.rfftn,
+            axes=(
+                -2,
+                -1,
+            ),
+        ),
+        {"Tcomplex", "Treal"},
+    ),
     "RFFT3D": _get_jax_op(
         functools.partial(
-            jnp.fft.rfftn, axes=(-3, -2, -1,)), {"Tcomplex", "Treal"}),
+            jnp.fft.rfftn,
+            axes=(
+                -3,
+                -2,
+                -1,
+            ),
+        ),
+        {"Tcomplex", "Treal"},
+    ),
     "RightShift": _get_jax_op(jnp.right_shift, {"T"}),
     "Round": _get_jax_op(jnp.round, {"T"}),
     "Rsqrt": _get_jax_op(jax.lax.rsqrt, {"T"}),
@@ -179,8 +265,9 @@ _jax_ops = {
     "Sign": _get_jax_op(anp.sign, {"T"}),
     "Sin": _get_jax_op(jnp.sin, {"T"}),
     "Sinh": _get_jax_op(jnp.sinh, {"T"}),
-    "Size": _get_jax_op(lambda x: np.prod(jnp.shape(x), dtype=np.int32),
-                        {"T", "out_type"}),
+    "Size": _get_jax_op(
+        lambda x: np.prod(jnp.shape(x), dtype=np.int32), {"T", "out_type"}
+    ),
     "Softplus": _get_jax_op(jax.nn.softplus, {"T"}),
     "Sqrt": _get_jax_op(jnp.sqrt, {"T"}),
     "Square": _get_jax_op(jnp.square, {"T"}),
@@ -189,27 +276,33 @@ _jax_ops = {
     "Tan": _get_jax_op(jnp.tan, {"T"}),
     "Tanh": _get_jax_op(jnp.tanh, {"T"}),
     "TensorListFromTensor": _get_jax_op(
-        lambda xs, element_shape: xs, {"element_dtype", "shape_type"}),
+        lambda xs, element_shape: xs, {"element_dtype", "shape_type"}
+    ),
     "Tile": _get_jax_op(anp.tile, {"T", "Tmultiples"}),
     "UnsortedSegmentMax": _get_jax_op(
         functools.partial(jax.ops.segment_max, indices_are_sorted=False),
-        {"T", "Tindices", "Tnumsegments"}),
+        {"T", "Tindices", "Tnumsegments"},
+    ),
     "UnsortedSegmentMin": _get_jax_op(
         functools.partial(jax.ops.segment_min, indices_are_sorted=False),
-        {"T", "Tindices", "Tnumsegments"}),
+        {"T", "Tindices", "Tnumsegments"},
+    ),
     "UnsortedSegmentProd": _get_jax_op(
         functools.partial(jax.ops.segment_prod, indices_are_sorted=False),
-        {"T", "Tindices", "Tnumsegments"}),
+        {"T", "Tindices", "Tnumsegments"},
+    ),
     "UnsortedSegmentSum": _get_jax_op(
         functools.partial(jax.ops.segment_sum, indices_are_sorted=False),
-        {"T", "Tindices", "Tnumsegments"}),
+        {"T", "Tindices", "Tnumsegments"},
+    ),
     "Where": _get_jax_op(jnp.argwhere, {"T"}),
     "ZerosLike": _get_jax_op(jnp.zeros_like, {"T"}),
     # The assignment logic is handled in _OpNode and convert().
     "AssignAddVariableOp": _get_jax_op(jnp.add, {"dtype"}),
     "AssignSubVariableOp": _get_jax_op(jnp.subtract, {"dtype"}),
     "AssignVariableOp": _get_jax_op(
-        lambda var, x: x, {"dtype", "validate_shape"}),
+        lambda var, x: x, {"dtype", "validate_shape"}
+    ),
 }
 
 
@@ -2643,23 +2736,30 @@ class _XlaVariadicSort(_HigherOrderFunction):
     def get_operands():
       return sum([[jnp.array(0, dtype)] * 2 for dtype in dtypes], [])
 
+    num_keys = 0
+    found_non_key = False
     for idx in range(len(dtypes)):
       operands = get_operands()
       is_eq, = comparator(*operands)
 
-      operands[idx * 2 + 1] = jnp.array(1, dtypes[idx])
-      is_lt, = comparator(*operands)
+      operands_lt = list(operands)
+      operands_lt[idx * 2 + 1] = jnp.array(1, dtypes[idx])
+      (is_lt,) = comparator(*operands_lt)
 
-      if idx == 0 and (not is_lt or is_eq):
-        raise ValueError(
-            "Only less-than comparator is supported for XlaVariadicSort.")
+      operands_gt = list(operands)
+      operands_gt[idx * 2] = jnp.array(1, dtypes[idx])
+      (is_gt,) = comparator(*operands_gt)
 
-      if is_lt:
+      if not is_eq and is_lt and not is_gt and not found_non_key:
         num_keys = idx + 1
+      elif not is_eq and not is_lt and not is_gt and idx > 0:
+        found_non_key = True
       else:
-        break
+        raise ValueError(
+            "Only less-than comparator is supported for XlaVariadicSort."
+        )
 
-    return num_keys  # pyrefly: ignore[unbound-name]
+    return num_keys
 
   def __call__(self, *args: jnp.ndarray, comparator: Callable[..., Any]):
     operands = args[:-1]
@@ -2855,7 +2955,7 @@ class _XlaScatter(_HigherOrderFunction):
   ) -> jnp.ndarray:
     dummy_zero = jnp.array(0).astype(operand.dtype)
     jaxpr = jax.make_jaxpr(update_computation)(dummy_zero, dummy_zero)
-    if not jaxpr.eqns:
+    if not jaxpr.eqns and jaxpr.jaxpr.outvars == [jaxpr.jaxpr.invars[1]]:
       scatter_fn = jax.lax.scatter
     elif len(jaxpr.eqns) == 1 and jaxpr.eqns[0].primitive == jax.lax.add_p:
       scatter_fn = jax.lax.scatter_add
@@ -2867,7 +2967,8 @@ class _XlaScatter(_HigherOrderFunction):
       scatter_fn = jax.lax.scatter_max
     else:
       raise ValueError(
-          "Reducer not supported as `update_computation`, found {jaxpr}")
+          f"Reducer not supported as `update_computation`, found {jaxpr}"
+      )
 
     return scatter_fn(
         operand,
@@ -2917,7 +3018,7 @@ class _XlaSelectAndScatter(_HigherOrderFunction):
 
     scatter_jaxpr = jax.make_jaxpr(scatter)(inner_init_value, inner_init_value)
     scatter_eqn = _maybe_get_jaxpreqn(scatter_jaxpr)
-    if scatter_eqn is not None and scatter_eqn.primitive is not jax.lax.add_p:
+    if scatter_eqn is None or scatter_eqn.primitive is not jax.lax.add_p:
       raise ValueError(
           f"Only Add is supported as scatter function, found {scatter_jaxpr}.")
 
