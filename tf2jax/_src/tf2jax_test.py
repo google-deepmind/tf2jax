@@ -425,6 +425,58 @@ class FeaturesTest(tf.test.TestCase, parameterized.TestCase):
     self.assertAllClose(tf_grads, jax_grads)
 
   @chex.variants(with_jit=True, without_jit=True)
+  def test_custom_gradient_with_captured_variable(self):
+    scale = tf.Variable([5.0, 6.0], dtype=tf.float32, name="scale")
+
+    @tf.function
+    @tf.custom_gradient
+    def tf_func(x, y):
+      def grad(dy):
+        return dy * scale, dy * (scale + 1.0)
+
+      return x + y, grad
+
+    np_x = np.array([1.0, 2.0], np.float32)
+    np_y = np.array([3.0, 4.0], np.float32)
+    tf_x = tf.constant(np_x)
+    tf_y = tf.constant(np_y)
+    with tf.GradientTape() as tape:
+      tape.watch([tf_x, tf_y])
+      tf_outputs = tf_func(tf_x, tf_y)
+      tf_grads = tape.gradient(tf_outputs, (tf_x, tf_y))
+
+    jax_func = self.variant(
+        tf2jax.convert_functional(
+            tf_func, np.zeros_like(np_x), np.zeros_like(np_y)
+        )
+    )
+    jax_outputs = jax_func(np_x, np_y)
+    jax_grads = jax.grad(lambda x, y: jnp.sum(jax_func(x, y)), argnums=(0, 1))(
+        np_x, np_y
+    )
+
+    self.assertAllClose(tf_outputs, jax_outputs)
+    tree.map_structure(self.assertAllClose, tf_grads, jax_grads)
+
+    @tf.function
+    @tf.custom_gradient
+    def tf_func_assign_in_grad(x):
+      def grad(dy):
+        scale.assign_add(dy)
+        return dy * scale
+
+      return x * 2.0, grad
+
+    jax_assign_func = self.variant(
+        tf2jax.convert_functional(tf_func_assign_in_grad, np.zeros_like(np_x))
+    )
+    with self.assertRaisesRegex(
+        ValueError,
+        "Variable assignments not supported in library or custom_gradient",
+    ):
+      jax.grad(lambda x: jnp.sum(jax_assign_func(x)))(np_x)
+
+  @chex.variants(with_jit=True, without_jit=True)
   def test_trainable(self):
     can_train = tf.Variable(3.14, trainable=True, name="can_train")
     not_train = tf.Variable(42., trainable=False, name="not_train")
