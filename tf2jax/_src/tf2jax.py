@@ -1490,8 +1490,14 @@ def _convert_gradient_function(
     else:
       external_capture_specs.append(tf.TensorSpec.from_tensor(cap))
 
-  structured_grad_input_specs = tree.map_structure(tf.TensorSpec.from_tensor,
-                                                   concrete_tf_grad_fn.inputs)
+  # Internal captures (e.g. constants hoisted out of the gradient function) are
+  # already supplied via `captured_input_names`, so they must be excluded here.
+  # Otherwise they are counted both as positional arguments and as captures, and
+  # the caller is asked for an argument it has no way to provide.
+  structured_grad_input_specs = tree.map_structure(
+      tf.TensorSpec.from_tensor,
+      [v for v in grad_inputs if v.op.name not in set(internal_capture_names)],
+  )
   structured_grad_input_specs = (structured_grad_input_specs, {})
   grad_input_specs = input_specs + tuple(external_capture_specs)
   grad_structured_outputs = tuple(

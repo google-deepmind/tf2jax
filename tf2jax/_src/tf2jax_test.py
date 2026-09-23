@@ -395,6 +395,36 @@ class FeaturesTest(tf.test.TestCase, parameterized.TestCase):
     tree.map_structure(self.assertAllClose, tuple(tf_grads), jax_grads)
 
   @chex.variants(with_jit=True, without_jit=True)
+  def test_custom_gradient_with_internal_capture(self):
+    # The constant captured by the gradient function is supplied internally, so
+    # it must not also be counted as a positional argument.
+    captured = tf.constant([5.0, 6.0])
+
+    @tf.function
+    @tf.custom_gradient
+    def tf_func(x):
+      def grad(dy):
+        return dy * captured
+
+      return x * 2.0, grad
+
+    np_inputs = np.array([1.0, 2.0], np.float32)
+    tf_inputs = tf.constant(np_inputs)
+    with tf.GradientTape() as tape:
+      tape.watch(tf_inputs)
+      tf_outputs = tf_func(tf_inputs)
+      tf_grads = tape.gradient(tf_outputs, tf_inputs)
+
+    jax_func = self.variant(
+        tf2jax.convert_functional(tf_func, np.zeros_like(np_inputs))
+    )
+    jax_outputs = jax_func(np_inputs)
+    jax_grads = jax.grad(lambda x: jnp.sum(jax_func(x)))(np_inputs)
+
+    self.assertAllClose(tf_outputs, jax_outputs)
+    self.assertAllClose(tf_grads, jax_grads)
+
+  @chex.variants(with_jit=True, without_jit=True)
   def test_trainable(self):
     can_train = tf.Variable(3.14, trainable=True, name="can_train")
     not_train = tf.Variable(42., trainable=False, name="not_train")
