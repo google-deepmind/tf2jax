@@ -2634,6 +2634,144 @@ class OpsTest(test_util.TestCase):
         return getattr(tf.raw_ops, op_name)(sorted_inputs=x, values=y)
     self._test_convert(tf_func, inputs)
 
+  @parameterized.parameters("Equal", "NotEqual")
+  def test_comparison_incompatible_shape_error_false(self, op_name):
+    @tf.function
+    def compare(x, y):
+      return getattr(tf.raw_ops, op_name)(
+          x=x, y=y, incompatible_shape_error=False
+      )
+
+    with self.assertRaisesRegex(
+        ValueError, "incompatible_shape_error=False is not supported"
+    ):
+      tf2jax.convert_functional(
+          compare, np.array([1, 2], np.int32), np.array([1, 2], np.int32)
+      )
+
+  def test_xla_variadic_sort_invalid_comparator(self):
+    x = np.array([3, 1, 2], dtype=np.int32)
+    y = np.array([6, 4, 5], dtype=np.int32)
+
+    @tf.function
+    def secondary_gt_comp(k0_lhs, k0_rhs, k1_lhs, k1_rhs):
+      return tf.where(
+          tf.equal(k0_lhs, k0_rhs),
+          tf.greater(k1_lhs, k1_rhs),
+          tf.less(k0_lhs, k0_rhs),
+      )
+
+    @tf.function
+    def sort_secondary_gt(a, b):
+      return tf.raw_ops.XlaVariadicSort(
+          inputs=[a, b],
+          dimension=0,
+          comparator=secondary_gt_comp.get_concrete_function(
+              tf.TensorSpec((), tf.int32),
+              tf.TensorSpec((), tf.int32),
+              tf.TensorSpec((), tf.int32),
+              tf.TensorSpec((), tf.int32),
+          ),
+          is_stable=True,
+      )
+
+    with self.assertRaisesRegex(
+        ValueError, "Only less-than comparator is supported for XlaVariadicSort"
+    ):
+      tf2jax.convert_functional(sort_secondary_gt, x, y)(x, y)
+
+    @tf.function
+    def ne_comp(lhs, rhs):
+      return tf.not_equal(lhs, rhs)
+
+    @tf.function
+    def sort_ne(a):
+      return tf.raw_ops.XlaVariadicSort(
+          inputs=[a],
+          dimension=0,
+          comparator=ne_comp.get_concrete_function(
+              tf.TensorSpec((), tf.int32), tf.TensorSpec((), tf.int32)
+          ),
+          is_stable=True,
+      )
+
+    with self.assertRaisesRegex(
+        ValueError, "Only less-than comparator is supported for XlaVariadicSort"
+    ):
+      tf2jax.convert_functional(sort_ne, x)(x)
+
+  def test_xla_scatter_invalid_update_computation(self):
+    @tf.function
+    def keep_old(old, new):
+      del new
+      return old
+
+    dim_numbers = ops.xla_utils.xla_data_pb2.ScatterDimensionNumbers(
+        update_window_dims=(),
+        inserted_window_dims=[0],
+        scatter_dims_to_operand_dims=[0],
+        index_vector_dim=1,
+    )
+
+    @tf.function
+    def scatter_keep_old(operand, indices, updates):
+      return tf.raw_ops.XlaScatter(
+          operand=operand,
+          scatter_indices=indices,
+          updates=updates,
+          update_computation=keep_old.get_concrete_function(
+              tf.TensorSpec((), tf.float32), tf.TensorSpec((), tf.float32)
+          ),
+          dimension_numbers=dim_numbers.SerializeToString(),
+          indices_are_sorted=False,
+      )
+
+    operand = np.zeros((4,), dtype=np.float32)
+    indices = np.array([[1], [2]], dtype=np.int32)
+    updates = np.array([10.0, 20.0], dtype=np.float32)
+    with self.assertRaisesRegex(
+        ValueError, "Reducer not supported as `update_computation`"
+    ):
+      tf2jax.convert_functional(scatter_keep_old, operand, indices, updates)(
+          operand, indices, updates
+      )
+
+  def test_xla_select_and_scatter_invalid_scatter(self):
+    @tf.function
+    def select_ge(lhs, rhs):
+      return tf.greater_equal(lhs, rhs)
+
+    @tf.function
+    def scatter_overwrite(lhs, rhs):
+      del lhs
+      return rhs
+
+    @tf.function
+    def select_and_scatter(operand, source):
+      return tf.raw_ops.XlaSelectAndScatter(
+          operand=operand,
+          window_dimensions=[2],
+          window_strides=[2],
+          padding=[[0, 0]],
+          source=source,
+          init_value=tf.constant(0.0, dtype=tf.float32),
+          select=select_ge.get_concrete_function(
+              tf.TensorSpec((), tf.float32), tf.TensorSpec((), tf.float32)
+          ),
+          scatter=scatter_overwrite.get_concrete_function(
+              tf.TensorSpec((), tf.float32), tf.TensorSpec((), tf.float32)
+          ),
+      )
+
+    operand = np.array([1.0, 3.0, 2.0, 4.0], dtype=np.float32)
+    source = np.array([10.0, 20.0], dtype=np.float32)
+    with self.assertRaisesRegex(
+        ValueError, "Only Add is supported as scatter function"
+    ):
+      tf2jax.convert_functional(select_and_scatter, operand, source)(
+          operand, source
+      )
+
 
 if __name__ == "__main__":
   tf.test.main()
