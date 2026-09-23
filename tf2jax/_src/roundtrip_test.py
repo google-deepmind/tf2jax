@@ -971,6 +971,35 @@ class Jax2TfTest(test_util.TestCase):
         with_custom_grad=with_custom_grad,
     )
 
+  @chex.variants(without_jit=True, with_jit=True)
+  def test_custom_gradient_higher_order_error(self):
+    inputs = np.array(3.0, dtype=np.float32)
+
+    @tf.custom_gradient
+    def inner_grad(x):
+      def grad_of_grad(ddy):
+        return ddy * 10.0
+
+      return 2.0 * x, grad_of_grad
+
+    @tf.custom_gradient
+    def forward(x):
+      def grad(dy):
+        return dy * inner_grad(x)
+
+      return x * x, grad
+
+    tf_forward = tf.function(forward, autograph=False)
+
+    with config.override_config("convert_custom_gradient", True):
+      jax_forward = tf2jax.convert_functional(tf_forward, tf.zeros_like(inputs))
+    jax_forward = self.variant(jax_forward)
+
+    self.assertAllClose(9.0, jax_forward(inputs))
+    self.assertAllClose(6.0, jax.grad(jax_forward)(inputs))
+    with self.assertRaises(LookupError):
+      jax.grad(jax.grad(jax_forward))(inputs)
+
   @chex.variants(with_jit=True, without_jit=True)
   @parameterized.named_parameters(
       chex.params_product(
