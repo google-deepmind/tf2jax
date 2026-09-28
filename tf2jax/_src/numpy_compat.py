@@ -161,7 +161,7 @@ def asarray(arr, dtype: tf.DType):
 def empty(shape, dtype: tf.DType, init: bool):
   del init
   dtype = _get_dtypes(shape)[dtype]
-  return _get_np(shape).full(shape, dtype(), dtype=dtype)
+  return _get_np(shape).full(shape, dtype(), dtype=dtype)  # pyrefly: ignore[not-callable]
 
 
 def full(shape, fill_value, dtype: tf.DType):

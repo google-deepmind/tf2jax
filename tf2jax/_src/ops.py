@@ -680,7 +680,7 @@ def _cumsum(proto):
       pad_shape[axis] = 1
       x = anp.concatenate([np.zeros(pad_shape, dtype=x.dtype), x], axis=axis)
       x = x[(slice(None),) * axis + (slice(0, -1), Ellipsis)]
-    res = anp.cumsum(x, axis=axis)
+    res = anp.cumsum(x, axis=axis)  # pyrefly: ignore[bad-argument-type]
     if reverse:
       res = anp.flip(res, axis=axis)
     return res
@@ -707,7 +707,7 @@ def _cumprod(proto):
       pad_shape[axis] = 1
       x = anp.concatenate([np.ones(pad_shape, dtype=x.dtype), x], axis=axis)
       x = x[(slice(None),) * axis + (slice(0, -1), Ellipsis)]
-    res = anp.cumprod(x, axis=axis)
+    res = anp.cumprod(x, axis=axis)  # pyrefly: ignore[bad-argument-type]
     if reverse:
       res = anp.flip(res, axis=axis)
     return res
@@ -1280,7 +1280,7 @@ def _matrix_set_diag(proto):
             f"Incompatible inputs shape ({inputs.shape}) and diagonals shape "
             f"({diagonals.shape}).")
 
-      return jnp.diagflat(diag, k=k)[:inps.shape[0], :inps.shape[1]]
+      return jnp.diagflat(diag, k=k)[:inps.shape[0], :inps.shape[1]]  # pyrefly: ignore[bad-argument-type]
 
     for _ in range(len(diagonals.shape) - 1):
       diag_fn = jax.vmap(diag_fn)
