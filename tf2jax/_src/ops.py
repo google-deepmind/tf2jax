@@ -411,8 +411,8 @@ def _space_to_batch_nd(proto):
 
     flatten_shape = [batch * np.prod(block_shape)]
     for idx in range(num_spatial):
-      flatten_shape.append(padded_shape[idx + 1] // block_shape[idx])  # pyrefly: ignore[bad-argument-type]
-    flatten_shape.extend(remaining_shape)  # pyrefly: ignore[bad-argument-type]
+      flatten_shape.append(padded_shape[idx + 1] // block_shape[idx])
+    flatten_shape.extend(remaining_shape)
     flattened = permuted.reshape(flatten_shape)
 
     return flattened
@@ -2218,7 +2218,7 @@ def _svd(proto):
     else:
       u, s, v = None, res, None
 
-    return s, u, v  # pyrefly: ignore[bad-return]
+    return s, u, v
 
   return _func
 

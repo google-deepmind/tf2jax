@@ -125,7 +125,7 @@ def mhlo_apply_abstract_eval(
     # In practice, the output shapes may actually be much more constrained, but
     # the information is not available here.
     output_specs = []
-    for idx, res in enumerate(symtab["main"].type.results):  # pytype: disable=attribute-error
+    for idx, res in enumerate(symtab["main"].type.results):  # pyrefly: ignore[missing-attribute]
       if any(dim == res.get_dynamic_size() for dim in res.shape):
         out_shape = ", ".join(
             f"{_UKNOWN_DIM_PREFIX}_{(dynamic_count := dynamic_count + 1)}"
@@ -196,7 +196,7 @@ def mhlo_apply_lowering(
       src_module=mhlo_module)
 
   symtab = ir.SymbolTable(ctx.module_context.module.operation)
-  result_types = symtab[program_name].type.results  # pytype: disable=attribute-error
+  result_types = symtab[program_name].type.results  # pyrefly: ignore[missing-attribute]
 
   # Paranoid checks.
   assert len(mlir.flatten_ir_values(args)) == len(args), (

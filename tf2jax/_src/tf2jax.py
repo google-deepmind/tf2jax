@@ -181,8 +181,8 @@ class _CachedBuilder:
   def __call__(
       self,
   ) -> Tuple[Callable[..., Any], Optional[Mapping[str, ArrayLike]]]:
-    with config.override_configs(self._cached_configs):  # pytype: disable=attribute-error
-      return self._builder_fn()  # pytype: disable=attribute-error
+    with config.override_configs(self._cached_configs):
+      return self._builder_fn()
 
 
 class _LibraryFunction(NamedTuple):
@@ -615,7 +615,7 @@ class _Subgraph(NamedTuple):
 
   @property
   def name(self) -> str:
-    return self.output_node.name  # pytype: disable=attribute-error
+    return self.output_node.name
 
   @property
   def inputs(self) -> Tuple[_TensorEdge, ...]:
@@ -624,7 +624,7 @@ class _Subgraph(NamedTuple):
   @property
   def function_inputs(self) -> Tuple[_TensorEdge, ...]:
     """Inputs for the custom_gradient wrapped function."""
-    return tuple(self.output_node.inputs[len(self.outputs):])  # pytype: disable=attribute-error
+    return tuple(self.output_node.inputs[len(self.outputs):])
 
   @property
   def unique_inputs(self) -> Tuple[_TensorEdge, ...]:
@@ -887,7 +887,7 @@ def _infer_relu_from_jax2tf(nodes):
       else:
         const_arg = cast_or_const_arg
 
-      if const_arg.op == "Const" and const_arg((), rng=None)[0].tolist() == 0:  # pytype: disable=wrong-arg-types
+      if const_arg.op == "Const" and const_arg((), rng=None)[0].tolist() == 0:
         # Replace the Maximum op with a Relu op, but keep the node name.
         # The Cast and Const ops may now be redundant but are kept anyway.
         node.op = "Relu"
@@ -1281,7 +1281,7 @@ def _convert(
     if lost_params:
       raise ValueError(f"Some updated parameters are lost, {lost_params}.")
 
-    return collected_outputs, new_params  # pytype: disable=bad-return-type  # py311-upgrade
+    return collected_outputs, new_params
 
   return jax_func, variables
 
@@ -1437,7 +1437,7 @@ def _convert_gradient_function(
     # TODO(b/301726317) Use the escape hatch for call_tf as this may call
     # jax2tf inside of JAX transformations, which is normally disallowed.
     # pylint: disable=g-import-not-at-top
-    from jax.experimental.jax2tf import jax2tf as jax2tf_internal  # pytype: disable=import-error
+    from jax.experimental.jax2tf import jax2tf as jax2tf_internal  # pyrefly: ignore[missing-import]
     # pylint: enable=g-import-not-at-top
     inside_call_tf = jax2tf_internal.inside_call_tf
 

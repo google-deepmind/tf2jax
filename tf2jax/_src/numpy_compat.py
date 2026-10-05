@@ -71,7 +71,7 @@ _NP_LIKES = (np.ndarray, np.number, np.bool_, bool, int, float, complex)
 def is_poly_dim(x) -> bool:
   """Checks if `x` is a symbolic dimension."""
   if jax.__version_info__ >= (0, 4, 30):
-    from jax import export  # pylint: disable=g-import-not-at-top  # pytype: disable=import-error
+    from jax import export  # pylint: disable=g-import-not-at-top
     return export.is_symbolic_dim(x)
 
   # This should reflect is_poly_dim() at

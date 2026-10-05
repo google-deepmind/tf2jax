@@ -70,12 +70,12 @@ def _refine_with_static_input_shapes(
             ir.RankedTensorType.get(shape, mlir.dtype_to_ir_type(x.dtype))
         )
     else:
-      new_main_input_types = [mlir.aval_to_ir_type(x) for x in operands]  # pylint: disable=no-value-for-parameter  # pytype: disable=missing-parameter
+      new_main_input_types = [mlir.aval_to_ir_type(x) for x in operands]  # pylint: disable=no-value-for-parameter  # pyrefly: ignore[bad-argument-type, missing-argument]
     # Retain the original element type. This is necessary because
     # jax.custom_gradient will replace integer types with the corresponding
     # tangent types, i.e. float0.
     for idx, (ox, nx) in enumerate(
-        zip(orig_main.type.inputs, new_main_input_types, strict=True)  # pytype: disable=attribute-error
+        zip(orig_main.type.inputs, new_main_input_types, strict=True)  # pyrefly: ignore[missing-attribute]
     ):
       assert isinstance(nx, ir.RankedTensorType), nx
       if ox.element_type != nx.element_type:
@@ -84,11 +84,11 @@ def _refine_with_static_input_shapes(
         )
     # Final input specs to be returned.
     input_specs = [
-        jax.core.ShapedArray(x.shape, mhlo.ir_type_to_dtype(x.element_type))  # pytype: disable=attribute-error
+        jax.core.ShapedArray(x.shape, mhlo.ir_type_to_dtype(x.element_type))  # pyrefly: ignore[missing-attribute]
         for x in new_main_input_types
     ]
 
-    orig_output_types = orig_main.type.results  # pytype: disable=attribute-error
+    orig_output_types = orig_main.type.results  # pyrefly: ignore[missing-attribute]
     new_main_ftype = ir.FunctionType.get(
         new_main_input_types, orig_output_types
     )
@@ -99,13 +99,13 @@ def _refine_with_static_input_shapes(
     )
 
     try:
-      new_main_op.attributes["arg_attrs"] = ir.ArrayAttr(orig_main.arg_attrs)  # pytype: disable=attribute-error
-      assert new_main_op.arg_attrs == orig_main.arg_attrs  # pytype: disable=attribute-error
+      new_main_op.attributes["arg_attrs"] = ir.ArrayAttr(orig_main.arg_attrs)  # pyrefly: ignore[missing-attribute]
+      assert new_main_op.arg_attrs == orig_main.arg_attrs  # pyrefly: ignore[missing-attribute]
     except KeyError:
       pass
     try:
-      new_main_op.attributes["res_attrs"] = ir.ArrayAttr(orig_main.result_attrs)  # pytype: disable=attribute-error
-      assert new_main_op.result_attrs == orig_main.result_attrs  # pytype: disable=attribute-error
+      new_main_op.attributes["res_attrs"] = ir.ArrayAttr(orig_main.result_attrs)  # pyrefly: ignore[missing-attribute]
+      assert new_main_op.result_attrs == orig_main.result_attrs  # pyrefly: ignore[missing-attribute]
     except KeyError:
       pass
     new_main_op.attributes["sym_visibility"] = ir.StringAttr.get("public")
@@ -115,7 +115,7 @@ def _refine_with_static_input_shapes(
     with ir.InsertionPoint(entry_block):
       orig_main_args: List[ir.Value] = []
       for new_arg, orig_arg_type in utils.safe_zip(
-          new_main_op.arguments, orig_main.type.inputs  # pytype: disable=attribute-error
+          new_main_op.arguments, orig_main.type.inputs  # pyrefly: ignore[missing-attribute]
       ):
         # TODO(shaobohou) Why is the ConvertOp needed?
         if orig_arg_type != new_arg:
