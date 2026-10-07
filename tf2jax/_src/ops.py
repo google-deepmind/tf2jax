@@ -2431,7 +2431,7 @@ def _xla_conv(proto):
         lhs,
         rhs,
         window_strides=strides.tolist(),
-        padding=[tuple(v) for v in padding],
+        padding=[tuple(v) for v in padding],  # pyrefly: ignore[bad-argument-type]
         lhs_dilation=lhs_dilation.tolist(),
         rhs_dilation=rhs_dilation.tolist(),
         dimension_numbers=dimension_numbers,
@@ -2796,7 +2796,7 @@ class _XlaReduceWindow(_HigherOrderFunction):
           computation=computation_fn,
           window_dimensions=window_dimensions,  # pyrefly: ignore[bad-argument-type]
           window_strides=window_strides,  # pyrefly: ignore[bad-argument-type]
-          padding=[tuple(v) for v in padding],
+          padding=[tuple(v) for v in padding],  # pyrefly: ignore[bad-argument-type]
           base_dilation=base_dilation,  # pyrefly: ignore[bad-argument-type]
           window_dilation=window_dilation)  # pyrefly: ignore[bad-argument-type]
 
