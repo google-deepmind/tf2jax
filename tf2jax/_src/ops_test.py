@@ -1078,17 +1078,52 @@ class OpsTest(test_util.TestCase):
     self._test_convert(fill_static, [])
 
   @chex.variants(with_jit=True, without_jit=False)
-  def test_fill_polymorphic(self):
+  @parameterized.named_parameters(
+      ("fill", lambda s: tf.zeros(shape=s, dtype=tf.float32)),
+      (
+          "empty",
+          lambda s: tf.raw_ops.Empty(shape=s, dtype=tf.float32, init=True),
+      ),
+      ("broadcast_to", lambda s: tf.broadcast_to(tf.ones([1, 1]), s)),
+      ("tile", lambda s: tf.tile(tf.ones([1, 1]), s)),
+      ("scatter_nd", lambda s: tf.scatter_nd([[0, 0]], [1.0], s)),
+  )
+  def test_polymorphic_shape_tensor_as_output_shape(self, make_output):
     @tf.function
-    def fill(x):
-      return tf.zeros(shape=tf.shape(x), dtype=tf.float32)
+    def fn(x):
+      return make_output(tf.shape(x))
 
     x = np.zeros((2, 3), dtype=np.float32)
     x_spec = export.symbolic_args_specs(x, "(a, b)")
     self._test_convert_polymorphic(
-        fill,
+        fn,
         _PolymorphicInput(
             tf_spec=tf.TensorSpec(shape=(None, None), dtype=tf.float32),
+            jax_spec=x_spec,
+            concrete_value=x,
+        ),
+    )
+
+  @chex.variants(with_jit=True, without_jit=False)
+  @parameterized.named_parameters(
+      ("pack", lambda x: [tf.shape(x)[0], -1]),
+      ("concat", lambda x: tf.concat([tf.shape(x)[:1], [-1]], axis=0)),
+      (
+          "split",
+          lambda x: tf.concat([tf.split(tf.shape(x), [1, 2])[0], [-1]], axis=0),
+      ),
+  )
+  def test_reshape_polymorphic(self, make_shape):
+    @tf.function
+    def reshape(x):
+      return tf.reshape(x, make_shape(x))
+
+    x = np.arange(24, dtype=np.float32).reshape((2, 3, 4))
+    x_spec = export.symbolic_args_specs(x, "(b, _, _)")
+    self._test_convert_polymorphic(
+        reshape,
+        _PolymorphicInput(
+            tf_spec=tf.TensorSpec(shape=(None, 3, 4), dtype=tf.float32),
             jax_spec=x_spec,
             concrete_value=x,
         ),

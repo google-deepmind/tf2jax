@@ -22,6 +22,7 @@ from absl.testing import parameterized
 import chex
 from flax import linen as nn
 import jax
+from jax import export
 from jax.experimental import jax2tf
 import jax.numpy as jnp
 import numpy as np
@@ -795,6 +796,62 @@ class Jax2TfTest(test_util.TestCase):
     tmp_dir = self.create_tempdir()
     options = tf.saved_model.SaveOptions(experimental_custom_gradients=True)
     tf.saved_model.save(module, tmp_dir.full_path, options=options)
+
+  @parameterized.named_parameters(
+      ("default", {}, ["tf2jax_unknown_dim_1", "4"]),
+      (
+          "reuse_input_dynamic_dim",
+          {"xlacallmodule_reuse_input_dynamic_dim": True},
+          ["b", "4"],
+      ),
+  )
+  def test_polymorphic_xla_call_module_output_dims(
+      self, configs, expected_dims
+  ):
+    tf_fn = tf.function(
+        jax2tf.convert(
+            jnp.sin, polymorphic_shapes=["(b, _)"], with_gradient=False
+        ),
+        autograph=False,
+    )
+    jax_fn = tf2jax.convert_functional(tf_fn, tf.TensorSpec((None, 4)))
+    x = np.arange(12, dtype=np.float32).reshape((3, 4))
+
+    with config.override_configs(configs):
+      exported = export.export(jax.jit(jax_fn))(
+          export.symbolic_args_specs(x, "(b, _)")
+      )
+
+    # Only the output dims are checked: `exported.call` cannot run the default
+    # case since `tf2jax_unknown_dim_1` is not solvable from the input shapes.
+    self.assertEqual(
+        [str(d) for d in exported.out_avals[0].shape], expected_dims
+    )
+
+  def test_polymorphic_xla_call_module_ambiguous_dims_are_not_reused(self):
+    tf_fn = tf.function(
+        jax2tf.convert(
+            lambda x, y: (jnp.sin(x), jnp.cos(y)),
+            polymorphic_shapes=["(a, _)", "(b, _)"],
+            with_gradient=False,
+        ),
+        autograph=False,
+    )
+    jax_fn = tf2jax.convert_functional(
+        tf_fn, tf.TensorSpec((None, 4)), tf.TensorSpec((None, 4))
+    )
+    x = np.arange(12, dtype=np.float32).reshape((3, 4))
+    y = np.arange(8, dtype=np.float32).reshape((2, 4))
+
+    with config.override_config("xlacallmodule_reuse_input_dynamic_dim", True):
+      exported = export.export(jax.jit(jax_fn))(
+          *export.symbolic_args_specs((x, y), ("(a, _)", "(b, _)"))
+      )
+
+    self.assertEqual(
+        [[str(d) for d in aval.shape] for aval in exported.out_avals],
+        [["tf2jax_unknown_dim_1", "4"], ["tf2jax_unknown_dim_2", "4"]],
+    )
 
   @chex.variants(with_jit=True)
   @parameterized.named_parameters(

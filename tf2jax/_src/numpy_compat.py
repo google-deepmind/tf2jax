@@ -89,17 +89,21 @@ def is_poly_dim(x) -> bool:
     return False
 
 
+def _is_poly_shape(x) -> bool:
+  """Checks if `x` is a shape tensor containing symbolic dimensions."""
+  # Shape tensors are stored as 1-D np.array.
+  return isinstance(x, np.ndarray) and x.ndim == 1 and any(map(is_poly_dim, x))
+
+
 def _is_np(x):
   """Checks if `x` is a numpy like type."""
-  # Special case for polymorphic shape tensors. Shape tensors are stored as 1-D
-  # np.array.
-  if isinstance(x, np.ndarray) and x.ndim == 1 and any(map(is_poly_dim, x)):
-    return False
   return isinstance(x, _NP_LIKES) or is_poly_dim(x)
 
 
-def _get_np(*args):
+def _get_np(*args, poly_shape_as_jax: bool = False):
   """Select numpy backend based on input types."""
+  if poly_shape_as_jax and any(map(_is_poly_shape, args)):
+    return jnp
   no_jax = all(map(_is_np, args))
   return np if no_jax else jnp
 
@@ -161,12 +165,14 @@ def asarray(arr, dtype: tf.DType):
 def empty(shape, dtype: tf.DType, init: bool):
   del init
   dtype = _get_dtypes(shape)[dtype]
-  return _get_np(shape).full(shape, dtype(), dtype=dtype)  # pyrefly: ignore[not-callable]
+  return _get_np(shape, poly_shape_as_jax=True).zeros(shape, dtype=dtype)
 
 
 def full(shape, fill_value, dtype: tf.DType):
   dtype = _get_dtypes(shape, fill_value)[dtype]
-  return _get_np(shape, fill_value).full(shape, fill_value, dtype=dtype)
+  return _get_np(shape, fill_value, poly_shape_as_jax=True).full(
+      shape, fill_value, dtype=dtype
+  )
 
 
 def gather(params, indices, axis: int, batch_dims: int):
@@ -195,7 +201,7 @@ def gather(params, indices, axis: int, batch_dims: int):
 
 
 def scatter_nd(indices, updates, shape):
-  np_ = _get_np(indices, updates)
+  np_ = _get_np(indices, updates, shape, poly_shape_as_jax=True)
   res = np_.zeros(shape, updates.dtype)
   key = tuple(np_.moveaxis(indices, -1, 0))
   if np_ is np:
@@ -246,16 +252,20 @@ def sum_(arr, axis: Union[int, Sequence[int]], keepdims: bool):
 
 # Array manipulation ops.
 def broadcast_to(arr, shape):
-  np_ = jnp if any([is_poly_dim(x) for x in shape]) else _get_np(arr)
-  return np_.broadcast_to(arr, shape)
+  return _get_np(arr, shape, poly_shape_as_jax=True).broadcast_to(arr, shape)
+
 
 concatenate = lambda arrs, axis: _get_np(*arrs).concatenate(arrs, axis=axis)
+
+
 expand_dims = lambda arr, axis: _get_np(arr).expand_dims(arr, axis=axis)
 flip = lambda arr, axis: _get_np(arr).flip(arr, axis=axis)
 roll = lambda arr, shift, axis: _get_np(arr).roll(arr, shift=shift, axis=axis)
 split = lambda arr, sections, axis: _get_np(arr).split(arr, sections, axis=axis)
 stack = lambda arrs, axis: _get_np(*arrs).stack(arrs, axis=axis)
-tile = lambda arr, reps: _get_np(arr, reps).tile(arr, reps=reps)
+tile = lambda arr, reps: _get_np(arr, reps, poly_shape_as_jax=True).tile(
+    arr, reps=reps
+)
 where = lambda cond, x, y: _get_np(cond, x, y).where(cond, x, y)
 
 

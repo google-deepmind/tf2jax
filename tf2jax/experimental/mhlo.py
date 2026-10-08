@@ -23,10 +23,9 @@ import jax.extend as jex
 from jax.interpreters import mlir
 from jax.interpreters import xla
 import jax.numpy as jnp
-
 from jaxlib.mlir import ir
 from jaxlib.mlir.dialects import func
-
+from tf2jax._src import config
 from tf2jax._src import utils
 
 
@@ -89,7 +88,7 @@ def ir_type_to_dtype(ir_type: ir.Type) -> jnp.dtype:
   return ir_to_jax[ir_type]  # pyrefly: ignore[bad-index, bad-return]
 
 
-_UKNOWN_DIM_PREFIX = "tf2jax_unknown_dim"
+_UNKNOWN_DIM_PREFIX = "tf2jax_unknown_dim"
 
 
 def mhlo_apply_abstract_eval(
@@ -104,35 +103,50 @@ def mhlo_apply_abstract_eval(
     dynamic_count = 0
     has_polymorphic = False
     symbolic_scope = None
+    input_symbolic_dims = set()
     for val in in_avals:
       for dim in val.shape:
         if not isinstance(dim, int):
           has_polymorphic = True
+          input_symbolic_dims.add(str(dim))
           try:
             symbolic_scope = symbolic_scope or dim.scope
           except AttributeError:
             pass
-          if any(x.startswith(_UKNOWN_DIM_PREFIX) for x in dim.get_vars()):
+          if any(x.startswith(_UNKNOWN_DIM_PREFIX) for x in dim.get_vars()):
             for dim in dim.get_vars():
-              if dim.startswith(_UKNOWN_DIM_PREFIX):
+              if dim.startswith(_UNKNOWN_DIM_PREFIX):
                 dynamic_count = max(
                     dynamic_count,
-                    (int(dim.removeprefix(_UKNOWN_DIM_PREFIX + "_"))),
+                    (int(dim.removeprefix(_UNKNOWN_DIM_PREFIX + "_"))),
                 )
 
     # Map each `dynamic`` dimension to a unique dimension variable because we
     # do not have the information from the avals of the original JAX function.
     # In practice, the output shapes may actually be much more constrained, but
     # the information is not available here.
+    # See the `xlacallmodule_reuse_input_dynamic_dim` config for an opt-in
+    # alternative when the inputs have a single symbolic dimension.
+    reused_dim = None
+    if (
+        config.get_config("xlacallmodule_reuse_input_dynamic_dim")
+        and len(input_symbolic_dims) == 1
+    ):
+      reused_dim = next(iter(input_symbolic_dims))
+
     output_specs = []
     for idx, res in enumerate(symtab["main"].type.results):  # pyrefly: ignore[missing-attribute]
       if any(dim == res.get_dynamic_size() for dim in res.shape):
-        out_shape = ", ".join(
-            f"{_UKNOWN_DIM_PREFIX}_{(dynamic_count := dynamic_count + 1)}"
-            if dim == res.get_dynamic_size()
-            else str(dim)
-            for dim in res.shape
-        )
+        dims = []
+        for dim in res.shape:
+          if dim != res.get_dynamic_size():
+            dims.append(str(dim))
+          elif reused_dim is not None:
+            dims.append(reused_dim)
+          else:
+            dynamic_count += 1
+            dims.append(f"{_UNKNOWN_DIM_PREFIX}_{dynamic_count}")
+        out_shape = ", ".join(dims)
 
         assert has_polymorphic, has_polymorphic
         if module.assume_grad_fn:

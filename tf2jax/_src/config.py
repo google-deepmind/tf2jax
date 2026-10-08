@@ -35,6 +35,12 @@ _config = dict(
     # Enable checks that each natively serialized computation is executed on a
     # platform for which it was lowered.
     xlacallmodule_strict_checks=True,
+    # If True and the inputs of a natively serialized computation have exactly
+    # one distinct symbolic dimension, every dynamic output dimension is assumed
+    # to equal it. This lets outputs be combined with inputs under shape
+    # polymorphism, e.g. a batch dimension that is carried through unchanged.
+    # It is incorrect for outputs such as `2 * b`, hence disabled by default.
+    xlacallmodule_reuse_input_dynamic_dim=False,
     # The type check assert in `TensorListGetItem` results in an error when
     # converting `tensorflow_probability`'s `HiddenMarkovModel.posterior_mode`
     # to JAX. Here we allow to disable it.
