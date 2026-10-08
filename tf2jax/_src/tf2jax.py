@@ -16,14 +16,15 @@
 
 import collections
 import contextlib
+import dataclasses
 import functools
+import importlib
 import inspect
 import itertools
 import json
-from typing import Any, Callable, Dict, Iterable, Iterator, Mapping, NamedTuple, Optional, Sequence, Tuple, Union
+from typing import Any, Callable, Dict, Iterable, Iterator, Mapping, NamedTuple, Optional, Sequence, Tuple, Union, cast
 
 from absl import logging
-
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -34,12 +35,11 @@ from tf2jax._src import utils
 import tree
 
 # Import usage logging here.
-
 from tensorflow.python.framework import op_def_registry  # pylint: disable=no-name-in-module
 from tensorflow.python.framework import ops as tf_ops  # pylint: disable=no-name-in-module
 
 try:
-  import tf2jax.experimental.ops  # pylint: disable=g-import-not-at-top,unused-import  # pyrefly: ignore[missing-import]
+  importlib.import_module("tf2jax.experimental.ops")
 except ImportError:
   logging.info(
       "Proceeding without support for experimental ops, e.g. XlaCallModule.")
@@ -185,18 +185,19 @@ class _CachedBuilder:
       return self._builder_fn()
 
 
-class _LibraryFunction(NamedTuple):
+@dataclasses.dataclass(frozen=True, kw_only=True)
+class _LibraryFunction:
   """A library function."""
   fn_builder: _CachedBuilder
   require_rng: bool
   # Optional fields (mainly) used by gradient functions.
-  input_specs: Optional[Tuple[tf.TensorSpec, ...]] = None
-  output_specs: Optional[Tuple[tf.TensorSpec, ...]] = None
+  input_specs: Tuple[tf.TensorSpec, ...] = ()
+  output_specs: Tuple[tf.TensorSpec, ...] = ()
   # If fn is a gradient function, this is the number of outputs of the original
   # fn, i.e. the number of leading `None`s returned by the gradient function.
   num_orig_fn_outputs: Optional[int] = None
   # Whether an output is unmodified input to the function.
-  output_is_input: Optional[Tuple[bool]] = None
+  output_is_input: Optional[Tuple[bool, ...]] = None
   # Inputs corresponding to VarHandleOp
   variable_input_specs: Optional[Tuple[tf.TensorSpec, ...]] = None
 
@@ -248,10 +249,13 @@ class _OpNode:
 
     inputs = [_TensorEdge.from_string(inp, node_map) for inp in proto.input]
 
-    self.inner_fns = dict()
+    self.inner_fns: Mapping[str, _LibraryFunction] = dict()
     if isinstance(self.jax_func, ops._HigherOrderFunction):
-      self.inner_fns = self.jax_func.get_inner_functions(library)
-      for input_name in self.jax_func.get_additional_inputs(**self.inner_fns):  # pyrefly: ignore[bad-argument-type]
+      self.inner_fns = cast(
+          Mapping[str, _LibraryFunction],
+          self.jax_func.get_inner_functions(library),
+      )
+      for input_name in self.jax_func.get_additional_inputs(**self.inner_fns):
         inputs.append(_TensorEdge.from_string(input_name, node_map))
 
     self.control_inputs = tuple([inp for inp in inputs if inp.is_control])
@@ -263,18 +267,18 @@ class _OpNode:
 
   @property
   def require_rng(self) -> bool:
-    inner_require_rngs = any([fn.require_rng for fn in self.inner_fns.values()])  # pyrefly: ignore[missing-attribute]
+    inner_require_rngs = any([fn.require_rng for fn in self.inner_fns.values()])
     return self.op in _TF_RANDOM_OPS or inner_require_rngs
 
   def __call__(
       self,
       named_args: Sequence[Tuple[str, jnp.ndarray]],
       *,
-      rng: jnp.ndarray,
+      rng: Optional[jnp.ndarray],
   ) -> Tuple[Tuple[jnp.ndarray, ...], Mapping[str, jnp.ndarray]]:
     unboxed_args = _unbox_named_args(named_args, self.inputs)
-    extras_dict = dict(rng=rng) if self.require_rng else dict()
-    extras_dict.update(self.inner_fns)  # pyrefly: ignore[no-matching-overload]
+    extras_dict: Dict[str, Any] = dict(rng=rng) if self.require_rng else dict()
+    extras_dict.update(self.inner_fns)
     outputs = self.jax_func(*unboxed_args, **extras_dict)
 
     # Return updated variables.
@@ -303,8 +307,8 @@ def _parse_input(op_str: str) -> str:
 
 
 def _toposort(
-    nodes: Mapping[str, tf.compat.v1.NodeDef],
-    end_node_names: Tuple[str, ...],
+    nodes: Mapping[str, Union[tf.compat.v1.NodeDef, "_NodeDef"]],
+    end_node_names: Sequence[str],
 ):
   """Topological sorting of nodes."""
 
@@ -344,20 +348,25 @@ def _toposort(
 class Variable(np.ndarray):
   """Array subclass with additional metadaa for representing variables."""
 
-  def __new__(cls, arr: np.ndarray, trainable: bool, name: str):
+  def __new__(
+      cls,
+      arr: np.ndarray,
+      trainable: Optional[bool],
+      name: Optional[str],
+  ):
     obj = np.asarray(arr).view(cls)
     obj.trainable = trainable
     obj.name = name
     return obj
 
   def assign(self, arr: np.ndarray) -> "Variable":
-    return Variable(arr, trainable=self.trainable, name=self.name)  # pyrefly: ignore[bad-argument-type]
+    return Variable(arr, trainable=self.trainable, name=self.name)
 
   def __array_finalize__(self, obj):
     if obj is None:
       return
-    self.trainable = getattr(obj, "trainable", None)
-    self.name = getattr(obj, "name", None)
+    self.trainable: Optional[bool] = getattr(obj, "trainable", None)
+    self.name: Optional[str] = getattr(obj, "name", None)
 
   def __repr__(self) -> str:
     message = f"Variable(name={repr(self.name)}, "
@@ -646,9 +655,9 @@ class _Subgraph(NamedTuple):
       self,
       named_args: Sequence[Tuple[str, jnp.ndarray]],
       *,
-      rng: jnp.ndarray,
+      rng: Optional[jnp.ndarray],
   ) -> Tuple[Tuple[jnp.ndarray, ...], Mapping[str, jnp.ndarray]]:
-    grad_inputs = tuple([_TensorEdge(v.name) for v in self.grad_fn.input_specs])  # pyrefly: ignore[not-iterable]
+    grad_inputs = tuple([_TensorEdge(v.name) for v in self.grad_fn.input_specs])
 
     @jax.custom_gradient
     def fn(*args):
@@ -667,6 +676,10 @@ class _Subgraph(NamedTuple):
 
       num_rng_required = sum([node.require_rng for node in self.subgraph])
       if num_rng_required:
+        if rng is None:
+          raise ValueError(
+              f"{num_rng_required} random ops require an rng but rng is None"
+          )
         rng_keys = list(jax.random.split(rng, num_rng_required))
       else:
         rng_keys = []
@@ -677,7 +690,8 @@ class _Subgraph(NamedTuple):
         ]
         sub_rng = rng_keys.pop() if node.require_rng else None
         eval_cache.outputs[node.name], updated_params = node(
-            collected_inputs, rng=sub_rng)  # pyrefly: ignore[bad-argument-type]
+            collected_inputs, rng=sub_rng
+        )
         if updated_params:
           raise ValueError(
               "Variable assignments not supported in custom_gradient subgraph, "
@@ -982,7 +996,7 @@ def _convert(
     captured_input_names: Optional[Tuple[str, ...]] = None,
     variable_map: Optional[Mapping[str, tf.Variable]] = None,
     constants: Optional[Mapping[str, jnp.ndarray]] = None,
-    library: Optional[Dict[str, _LibraryFunction]] = None,
+    library: Optional[Mapping[str, Optional[_LibraryFunction]]] = None,
 ) -> Tuple[Callable[..., Any], Mapping[str, Variable]]:
   """Convert a GraphDef to a Jax function.
 
@@ -1132,13 +1146,14 @@ def _convert(
         f"^{n.name}" for n in graphdef.node if n.op in _TF_ASSIGN_OPS)
     node_map[_EMPTY_RETURN_OP_NAME] = _NodeDef(
         "NoOp", _EMPTY_RETURN_OP_NAME, assign_nodes, {})
-    output_names = [_EMPTY_RETURN_OP_NAME]
+    output_names = (_EMPTY_RETURN_OP_NAME,)
     logging.warning(
         "No output nodes found, inserted NoOp to trigger side effects: %s",
         assign_nodes)
 
-  nodes = _toposort(node_map, output_names)  # pyrefly: ignore[bad-argument-type]
-  nodes = [_OpNode(node, library, node_map) for node in nodes]
+  fn_library = {k: v for k, v in library.items() if v is not None}
+  nodes = _toposort(node_map, output_names)
+  nodes = [_OpNode(node, fn_library, node_map) for node in nodes]
   output_args = [_TensorEdge.from_string(v, node_map) for v in output_names]
   num_rng_required = sum([node.require_rng for node in nodes])
 
@@ -1230,7 +1245,11 @@ def _convert(
     )
 
     if num_rng_required:
-      rng_keys = list(jax.random.split(rng, num_rng_required))  # pyrefly: ignore[bad-argument-type]
+      if rng is None:
+        raise ValueError(
+            f"{num_rng_required} random ops require an rng but rng is None"
+        )
+      rng_keys = list(jax.random.split(rng, num_rng_required))
     else:
       rng_keys = []
 
@@ -1248,7 +1267,8 @@ def _convert(
         ]
         sub_rng = rng_keys.pop() if node.require_rng else None
         eval_cache.outputs[node.name], updated_params = node(
-            collected_inputs, rng=sub_rng)  # pyrefly: ignore[bad-argument-type]
+            collected_inputs, rng=sub_rng
+        )
         # Assign variables.
         for var_name, var_val in updated_params.items():
           eval_cache.outputs[var_name] = var_val
@@ -1287,7 +1307,7 @@ def _convert(
 
 
 def _convert_library_function(
-    proto, library: Optional[Dict[str, _LibraryFunction]]
+    proto, library: Dict[str, Optional[_LibraryFunction]]
 ) -> _LibraryFunction:
   """Convert a FunctionDef."""
   input_nodes = []
@@ -1350,7 +1370,9 @@ def _convert_library_function(
   for node in proto.node_def:
     for attr in node.attr.values():
       if attr.func.name:
-        require_rng = require_rng or library[attr.func.name].require_rng  # pyrefly: ignore[unsupported-operation]
+        lib_fn = library[attr.func.name]
+        if lib_fn is not None:
+          require_rng = require_rng or lib_fn.require_rng
 
   def builder():
     jax_func, jax_params = _convert(
@@ -1436,9 +1458,9 @@ def _convert_gradient_function(
   try:
     # TODO(b/301726317) Use the escape hatch for call_tf as this may call
     # jax2tf inside of JAX transformations, which is normally disallowed.
-    # pylint: disable=g-import-not-at-top
-    from jax.experimental.jax2tf import jax2tf as jax2tf_internal  # pyrefly: ignore[missing-import]
-    # pylint: enable=g-import-not-at-top
+    jax2tf_internal: Any = importlib.import_module(
+        "jax.experimental.jax2tf.jax2tf"
+    )
     inside_call_tf = jax2tf_internal.inside_call_tf
 
     # TODO(b/301748972) Hack to support nesting of get_concrete_function in the
@@ -1524,16 +1546,16 @@ def _convert_gradient_function(
         captured_input_names=tuple(internal_capture_names),
         variable_map=variable_map,
         constants=constant_map,
-        library=library,  # pyrefly: ignore[bad-argument-type]
+        library=library,
     )
     return jax_grad_fn, jax_grad_params
 
   builder_fn = _CachedBuilder(builder, config.copy_config())
   grad_fn = _LibraryFunction(
-      builder_fn,
-      False,
-      grad_input_specs,
-      grad_output_specs,
-      num_fn_outputs,
+      fn_builder=builder_fn,
+      require_rng=False,
+      input_specs=grad_input_specs,
+      output_specs=grad_output_specs,
+      num_orig_fn_outputs=num_fn_outputs,
   )
   library.update({grad_fn_name: grad_fn})
