@@ -56,27 +56,28 @@ def _refine_with_static_input_shapes(
     module = ir.Module.parse(module_text)
     symbol_table = ir.SymbolTable(module.operation)
     orig_main = symbol_table["main"]
+    if not isinstance(orig_main, func.FuncOp):
+      raise ValueError(f"Expected FuncOp for 'main', got {type(orig_main)}")
     orig_main.attributes["sym_visibility"] = ir.StringAttr.get("private")
     symbol_table.set_symbol_name(orig_main, "_orig_main")
     orig_main_name = ir.StringAttr(symbol_table.insert(orig_main)).value
 
     # This help refine polymorphic shapes.
-    if jax.__version_info__ >= (0, 10, 1):
-      dyn_size = ir.ShapedType.get_dynamic_size()
-      new_main_input_types = []
-      for x in operands:
-        shape = [d if isinstance(d, int) else dyn_size for d in x.shape]
-        new_main_input_types.append(
-            ir.RankedTensorType.get(shape, mlir.dtype_to_ir_type(x.dtype))
-        )
-    else:
-      new_main_input_types = [mlir.aval_to_ir_type(x) for x in operands]  # pylint: disable=no-value-for-parameter  # pyrefly: ignore[bad-argument-type, missing-argument]
+    dyn_size = ir.ShapedType.get_dynamic_size()
+    new_main_input_types = []
+    for x in operands:
+      shape = [d if isinstance(d, int) else dyn_size for d in x.shape]
+      new_main_input_types.append(
+          ir.RankedTensorType.get(shape, mlir.dtype_to_ir_type(x.dtype))
+      )
     # Retain the original element type. This is necessary because
     # jax.custom_gradient will replace integer types with the corresponding
     # tangent types, i.e. float0.
     for idx, (ox, nx) in enumerate(
-        zip(orig_main.type.inputs, new_main_input_types, strict=True)  # pyrefly: ignore[missing-attribute]
+        zip(orig_main.type.inputs, new_main_input_types, strict=True)
     ):
+      if not isinstance(ox, ir.ShapedType):
+        raise ValueError(f"Expected ShapedType for input {idx}, got {type(ox)}")
       assert isinstance(nx, ir.RankedTensorType), nx
       if ox.element_type != nx.element_type:
         new_main_input_types[idx] = ir.RankedTensorType.get(
@@ -84,11 +85,11 @@ def _refine_with_static_input_shapes(
         )
     # Final input specs to be returned.
     input_specs = [
-        jax.core.ShapedArray(x.shape, mhlo.ir_type_to_dtype(x.element_type))  # pyrefly: ignore[missing-attribute]
+        jax.core.ShapedArray(x.shape, mhlo.ir_type_to_dtype(x.element_type))
         for x in new_main_input_types
     ]
 
-    orig_output_types = orig_main.type.results  # pyrefly: ignore[missing-attribute]
+    orig_output_types = orig_main.type.results
     new_main_ftype = ir.FunctionType.get(
         new_main_input_types, orig_output_types
     )
@@ -99,13 +100,13 @@ def _refine_with_static_input_shapes(
     )
 
     try:
-      new_main_op.attributes["arg_attrs"] = ir.ArrayAttr(orig_main.arg_attrs)  # pyrefly: ignore[missing-attribute]
-      assert new_main_op.arg_attrs == orig_main.arg_attrs  # pyrefly: ignore[missing-attribute]
+      new_main_op.attributes["arg_attrs"] = ir.ArrayAttr(orig_main.arg_attrs)
+      assert new_main_op.arg_attrs == orig_main.arg_attrs
     except KeyError:
       pass
     try:
-      new_main_op.attributes["res_attrs"] = ir.ArrayAttr(orig_main.result_attrs)  # pyrefly: ignore[missing-attribute]
-      assert new_main_op.result_attrs == orig_main.result_attrs  # pyrefly: ignore[missing-attribute]
+      new_main_op.attributes["res_attrs"] = ir.ArrayAttr(orig_main.result_attrs)
+      assert new_main_op.result_attrs == orig_main.result_attrs
     except KeyError:
       pass
     new_main_op.attributes["sym_visibility"] = ir.StringAttr.get("public")
@@ -115,7 +116,7 @@ def _refine_with_static_input_shapes(
     with ir.InsertionPoint(entry_block):
       orig_main_args: List[ir.Value] = []
       for new_arg, orig_arg_type in utils.safe_zip(
-          new_main_op.arguments, orig_main.type.inputs  # pyrefly: ignore[missing-attribute]
+          new_main_op.arguments, orig_main.type.inputs
       ):
         # TODO(shaobohou) Why is the ConvertOp needed?
         if orig_arg_type != new_arg:
@@ -271,10 +272,10 @@ def _xla_call_module(proto):
       # The change in _refine_with_static_input_shapes is not enough as
       # depending on whether we are computing gradient via Jax or TF, integer
       # types may or may not be replaced with float0.
-      operands = [  # pyrefly: ignore[bad-assignment]
+      operands = tuple(
           jnp.zeros(x.shape, y.dtype) if x.dtype == jax.dtypes.float0 else x
           for x, y in zip(operands, input_specs, strict=True)
-      ]
+      )
     return mhlo.mhlo_apply(*operands, module=mhlo_module)
 
   return _func

@@ -616,11 +616,11 @@ class FeaturesTest(tf.test.TestCase, parameterized.TestCase):
     x_tf = tf.ones((2, input_dim))
     y_tf = l(x_tf)
     kernel_tf, bias_tf = l.variables
-    tf_export_dir = self.create_tempdir()
-    jax_export_dir = self.create_tempdir()
+    tf_export_dir = self.create_tempdir().full_path
+    jax_export_dir = self.create_tempdir().full_path
     tf.saved_model.save(l, tf_export_dir)
 
-    module = FlaxTestDense(tf_export_dir, input_dim=input_dim)  # pyrefly: ignore[bad-argument-type]
+    module = FlaxTestDense(tf_export_dir, input_dim=input_dim)
     x_jax = jnp.ones((2, input_dim))
     y_jax, jax_params = module.init_with_output(jax.random.key(0), x_jax)
 
@@ -631,7 +631,7 @@ class FeaturesTest(tf.test.TestCase, parameterized.TestCase):
     np.testing.assert_allclose(y_tf.numpy(), y_jax, atol=1e-6, rtol=1e-6)
 
     def model_fn(params, inputs):  # The JAX model function to export.
-      fm = FlaxTestDense(tf_export_dir, input_dim=input_dim)  # pyrefly: ignore[bad-argument-type]
+      fm = FlaxTestDense(tf_export_dir, input_dim=input_dim)
       return fm.apply(params, inputs)
 
     class ExportWrapper(tf.Module):

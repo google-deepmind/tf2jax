@@ -238,8 +238,11 @@ def register_operation(op_name):
 
 
 class _LibraryFunction(Protocol):
+
   # Inputs corresponding to VarHandleOp
-  variable_input_specs: Optional[Tuple[tf.TensorSpec, ...]] = None
+  @property
+  def variable_input_specs(self) -> Optional[Tuple[tf.TensorSpec, ...]]:
+    ...
 
 
 @dataclasses.dataclass
@@ -335,15 +338,15 @@ def _batch_to_space_nd(proto):
       operand: jnp.ndarray, block_shape: jnp.ndarray, crops: jnp.ndarray
   ) -> jnp.ndarray:
     batch, *other_shape = list(operand.shape)
-    block_shape = block_shape.tolist()  # pyrefly: ignore[bad-assignment]
-    num_spatial = len(block_shape)
-    crops = crops.tolist()  # pyrefly: ignore[bad-assignment]
+    block_sizes: list[int] = block_shape.tolist()
+    num_spatial = len(block_sizes)
+    crop_sizes: list[list[int]] = crops.tolist()
     spatial_shape = other_shape[:num_spatial]
     remaining_shape = other_shape[num_spatial:]
 
     new_shape = (
-        block_shape  # pyrefly: ignore[unsupported-operation]
-        + [batch // np.prod(block_shape)]
+        block_sizes
+        + [batch // int(np.prod(block_sizes))]
         + spatial_shape
         + remaining_shape
     )
@@ -357,14 +360,16 @@ def _batch_to_space_nd(proto):
 
     uncropped_shape = [new_shape[num_spatial]]
     for idx in range(num_spatial):
-      uncropped_shape.append(block_shape[idx] * spatial_shape[idx])
-    uncropped_shape.extend(remaining_shape)  # pyrefly: ignore[bad-argument-type]
+      uncropped_shape.append(block_sizes[idx] * spatial_shape[idx])
+    uncropped_shape.extend(remaining_shape)
     uncropped = permuted.reshape(uncropped_shape)
 
     cropped_slice = [slice(None)]
     for idx in range(num_spatial):
       cropped_slice.append(
-          slice(crops[idx][0], uncropped_shape[1 + idx] - crops[idx][1])
+          slice(
+              crop_sizes[idx][0], uncropped_shape[1 + idx] - crop_sizes[idx][1]
+          )
       )
     cropped_slice += [slice(None)] * len(remaining_shape)
     cropped = uncropped[tuple(cropped_slice)]
@@ -383,19 +388,19 @@ def _space_to_batch_nd(proto):
       operand: jnp.ndarray, block_shape: jnp.ndarray, paddings: jnp.ndarray
   ) -> jnp.ndarray:
     batch, *other_shape = list(operand.shape)
-    block_shape = block_shape.tolist()  # pyrefly: ignore[bad-assignment]
-    num_spatial = len(block_shape)
-    paddings = paddings.tolist()  # pyrefly: ignore[bad-assignment]
+    block_sizes: list[int] = block_shape.tolist()
+    num_spatial = len(block_sizes)
+    pad_width: list[list[int]] = paddings.tolist()
     remaining_shape = other_shape[num_spatial:]
 
-    paddings = [[0, 0]] + paddings + [[0, 0]] * len(remaining_shape)  # pyrefly: ignore[unsupported-operation]
-    padded = jnp.pad(operand, paddings)
+    pad_width = [[0, 0]] + pad_width + [[0, 0]] * len(remaining_shape)
+    padded = jnp.pad(operand, pad_width)
     padded_shape = padded.shape
 
     new_shape = [batch]
     for idx in range(num_spatial):
       new_shape.extend(
-          [padded_shape[idx + 1] // block_shape[idx], block_shape[idx]]  # pyrefly: ignore[bad-argument-type]
+          [padded_shape[idx + 1] // block_sizes[idx], block_sizes[idx]]
       )
     new_shape.extend(remaining_shape)
     reshaped = padded.reshape(new_shape)
@@ -409,9 +414,9 @@ def _space_to_batch_nd(proto):
     permuted_axes.extend(list(range(num_spatial * 2 + 1, len(new_shape))))
     permuted = jnp.transpose(reshaped, axes=permuted_axes)
 
-    flatten_shape = [batch * np.prod(block_shape)]
+    flatten_shape = [batch * int(np.prod(block_sizes))]
     for idx in range(num_spatial):
-      flatten_shape.append(padded_shape[idx + 1] // block_shape[idx])
+      flatten_shape.append(padded_shape[idx + 1] // block_sizes[idx])
     flatten_shape.extend(remaining_shape)
     flattened = permuted.reshape(flatten_shape)
 
@@ -603,11 +608,12 @@ def _conv2d(proto):
     return jax.lax.conv_general_dilated(
         lhs,
         rhs,
-        window_strides=strides,  # pyrefly: ignore[bad-argument-type]
+        window_strides=strides,
         padding=padding,
         dimension_numbers=dimension_numbers,
-        rhs_dilation=dilations,  # pyrefly: ignore[bad-argument-type]
-        feature_group_count=feature_group_count)
+        rhs_dilation=dilations,
+        feature_group_count=feature_group_count,
+    )
 
   return _func
 
@@ -652,11 +658,12 @@ def _conv2d_backprop_input(proto):
     return jax.lax.conv_transpose(
         out_backprop,
         filters,
-        strides=strides,  # pyrefly: ignore[bad-argument-type]
+        strides=strides,
         padding=padding,
-        rhs_dilation=dilations,  # pyrefly: ignore[bad-argument-type]
+        rhs_dilation=dilations,
         transpose_kernel=True,
-        dimension_numbers=dimension_numbers)
+        dimension_numbers=dimension_numbers,
+    )
 
   return _func
 
@@ -670,19 +677,21 @@ def _cumsum(proto):
   reverse = proto.attr["reverse"].b
 
   def _func(x: jnp.ndarray, axis: jnp.ndarray) -> jnp.ndarray:
-    axis = axis.item()
-    if axis < 0:
-      axis = axis + x.ndim
+    axis_idx = int(axis.item())
+    if axis_idx < 0:
+      axis_idx = axis_idx + x.ndim
     if reverse:
-      x = anp.flip(x, axis=axis)
+      x = anp.flip(x, axis=axis_idx)
     if exclusive:
       pad_shape = list(x.shape)
-      pad_shape[axis] = 1
-      x = anp.concatenate([np.zeros(pad_shape, dtype=x.dtype), x], axis=axis)
-      x = x[(slice(None),) * axis + (slice(0, -1), Ellipsis)]
-    res = anp.cumsum(x, axis=axis)  # pyrefly: ignore[bad-argument-type]
+      pad_shape[axis_idx] = 1
+      x = anp.concatenate(
+          [np.zeros(pad_shape, dtype=x.dtype), x], axis=axis_idx
+      )
+      x = x[(slice(None),) * axis_idx + (slice(0, -1), Ellipsis)]
+    res = anp.cumsum(x, axis=axis_idx)
     if reverse:
-      res = anp.flip(res, axis=axis)
+      res = anp.flip(res, axis=axis_idx)
     return res
 
   return _func
@@ -697,19 +706,19 @@ def _cumprod(proto):
   reverse = proto.attr["reverse"].b
 
   def _func(x: jnp.ndarray, axis: jnp.ndarray) -> jnp.ndarray:
-    axis = axis.item()
-    if axis < 0:
-      axis = axis + x.ndim
+    axis_idx = int(axis.item())
+    if axis_idx < 0:
+      axis_idx = axis_idx + x.ndim
     if reverse:
-      x = anp.flip(x, axis=axis)
+      x = anp.flip(x, axis=axis_idx)
     if exclusive:
       pad_shape = list(x.shape)
-      pad_shape[axis] = 1
-      x = anp.concatenate([np.ones(pad_shape, dtype=x.dtype), x], axis=axis)
-      x = x[(slice(None),) * axis + (slice(0, -1), Ellipsis)]
-    res = anp.cumprod(x, axis=axis)  # pyrefly: ignore[bad-argument-type]
+      pad_shape[axis_idx] = 1
+      x = anp.concatenate([np.ones(pad_shape, dtype=x.dtype), x], axis=axis_idx)
+      x = x[(slice(None),) * axis_idx + (slice(0, -1), Ellipsis)]
+    res = anp.cumprod(x, axis=axis_idx)
     if reverse:
-      res = anp.flip(res, axis=axis)
+      res = anp.flip(res, axis=axis_idx)
     return res
 
   return _func
@@ -754,11 +763,12 @@ def _depthwise_conv2d(proto):
     return jax.lax.conv_general_dilated(
         lhs,
         jnp.reshape(rhs, rhs.shape[:2] + (1, output_dim)),
-        window_strides=strides,  # pyrefly: ignore[bad-argument-type]
+        window_strides=strides,
         padding=padding,
         dimension_numbers=dimension_numbers,
-        rhs_dilation=dilations,  # pyrefly: ignore[bad-argument-type]
-        feature_group_count=lhs.shape[channel_index])
+        rhs_dilation=dilations,
+        feature_group_count=lhs.shape[channel_index],
+    )
 
   return _func
 
@@ -1000,14 +1010,15 @@ def _fused_batch_norm(proto):
       # Apply Bessel's correction and additional smoothing.
       ndata = x.size / x.shape[channel_dim]
       correction = ndata / jnp.maximum(ndata - 1.0, 1.0)
-      running_var = running_var if running_var.size else 0  # pyrefly: ignore[bad-assignment]
-      running_mean = running_mean if running_mean.size else 0  # pyrefly: ignore[bad-assignment]
+      prev_var = running_var if running_var.size else 0
+      prev_mean = running_mean if running_mean.size else 0
       new_var = (
-          one_minus_factor * running_var +
-          exponential_avg_factor * batch_var * correction)
+          one_minus_factor * prev_var
+          + exponential_avg_factor * batch_var * correction
+      )
       new_mean = (
-          one_minus_factor * running_mean +
-          exponential_avg_factor * batch_mean)
+          one_minus_factor * prev_mean + exponential_avg_factor * batch_mean
+      )
       return norm_x, new_mean, new_var
     else:
       return norm_x, running_mean, running_var
@@ -1103,7 +1114,7 @@ def _identity_n(proto):
       name=proto.name,
       gradient_op_type=gradient_op_type,
       # Caching the config at conversion time.
-      with_custom_gradient=config.get_config("convert_custom_gradient"),  # pyrefly: ignore[bad-argument-type]
+      with_custom_gradient=bool(config.get_config("convert_custom_gradient")),
   )
 
 
@@ -1269,18 +1280,19 @@ def _matrix_set_diag(proto):
       diagonals: jnp.ndarray,
       k: jnp.ndarray,
   ) -> jnp.ndarray:
-    k = k.item()
+    k_val = int(k.item())
 
     def diag_fn(inps: jnp.ndarray, diag: jnp.ndarray) -> jnp.ndarray:
       assert len(inps.shape) == 2, inps.shape
       assert len(diag.shape) == 1, diag.shape
-      if ((diag.shape[0] + k > inps.shape[1]) or
-          (diag.shape[0] - k > inps.shape[0])):
+      if (diag.shape[0] + k_val > inps.shape[1]) or (
+          diag.shape[0] - k_val > inps.shape[0]
+      ):
         raise ValueError(
             f"Incompatible inputs shape ({inputs.shape}) and diagonals shape "
             f"({diagonals.shape}).")
 
-      return jnp.diagflat(diag, k=k)[:inps.shape[0], :inps.shape[1]]  # pyrefly: ignore[bad-argument-type]
+      return jnp.diagflat(diag, k=k_val)[: inps.shape[0], : inps.shape[1]]
 
     for _ in range(len(diagonals.shape) - 1):
       diag_fn = jax.vmap(diag_fn)
@@ -1306,10 +1318,10 @@ def _matrix_band_part(proto):
       raise ValueError(
           f"Expected input of at least rank 2, found {len(x.shape)}")
     mask_shape = x.shape[-2:]
-    lower = lower.item() + 1 if lower.item() >= 0 else max(mask_shape)  # pyrefly: ignore[bad-assignment]
-    mask_lower = jnp.tril(jnp.ones(mask_shape, jnp.int32), -lower)  # pyrefly: ignore[bad-argument-type]
-    upper = upper.item() + 1 if upper.item() >= 0 else max(mask_shape)  # pyrefly: ignore[bad-assignment]
-    mask_upper = jnp.triu(jnp.ones(mask_shape, jnp.int32), upper)  # pyrefly: ignore[bad-argument-type]
+    num_lower = int(lower.item()) + 1 if lower.item() >= 0 else max(mask_shape)
+    mask_lower = jnp.tril(jnp.ones(mask_shape, jnp.int32), -num_lower)
+    num_upper = int(upper.item()) + 1 if upper.item() >= 0 else max(mask_shape)
+    mask_upper = jnp.triu(jnp.ones(mask_shape, jnp.int32), num_upper)
     return jnp.where((mask_lower + mask_upper) == 0, x, 0)
 
   return _func
@@ -1517,7 +1529,9 @@ class _PartitionedCall(_HigherOrderFunction):
   def _get_additional_inputs(
       self, inner_fn: _LibraryFunction
   ) -> Tuple[str, ...]:
-    return tuple(spec.name for spec in inner_fn.variable_input_specs)  # pyrefly: ignore[not-iterable]
+    if inner_fn.variable_input_specs is None:
+      return ()
+    return tuple(spec.name for spec in inner_fn.variable_input_specs)
 
 
 @register_operation("StatefulPartitionedCall")
@@ -2049,12 +2063,12 @@ def _split_args(
 def _merge_args(
     const_args: Sequence[Tuple[int, Any]],
     trace_args: Sequence[Tuple[int, Any]],
-) -> Tuple[Any]:
+) -> Tuple[Any, ...]:
   args = [None] * (len(const_args) + len(trace_args))
   for idx, arg in tuple(const_args) + tuple(trace_args):
     args[idx] = arg
   assert all(x is not None for x in args)
-  return tuple(args)  # pyrefly: ignore[bad-return]
+  return tuple(args)
 
 
 class _StatelessWhile(_HigherOrderFunction):
@@ -2232,14 +2246,14 @@ def _tensor_list_get_item(proto):
   dtype = anp.get_jax_dtype(dtype)
 
   def _func(
-      xs: jnp.ndarray,
+      xs: ArrayLike,
       index: jnp.ndarray,
       element_shape: jnp.ndarray,
-  ) -> jnp.ndarray:
+  ) -> ArrayLike:
     if not config.get_config("disable_assert_in_tensor_list_get_item"):
       assert xs.dtype == dtype
     if xs.size == 0:
-      return np.zeros(element_shape, dtype=dtype)  # pyrefly: ignore[bad-return]
+      return np.zeros(element_shape, dtype=dtype)
     if isinstance(index, jax.Array):
       xs = jnp.array(xs)
     return xs[index]
@@ -2290,16 +2304,14 @@ def _tensor_list_set_item(proto):
   dtype = anp.get_jax_dtype(dtype)
 
   def _func(
-      xs: jnp.ndarray,
+      xs: ArrayLike,
       index: jnp.ndarray,
       item: jnp.ndarray,
   ) -> jnp.ndarray:
     assert xs.shape
     if xs.size == 0:
-      xs = _create_tensor_list(xs.shape[0], list(item.shape), dtype=dtype)  # pyrefly: ignore[bad-assignment]
-    if isinstance(index, jax.Array):
-      xs = jnp.array(xs)
-    return xs.at[index].set(item)
+      xs = _create_tensor_list(xs.shape[0], list(item.shape), dtype=dtype)
+    return jnp.asarray(xs).at[index].set(item)
 
   return _func
 
@@ -2312,9 +2324,9 @@ def _tensor_list_stack(proto):
   dtype = tf.as_dtype(proto.attr["element_dtype"].type)
   dtype = anp.get_jax_dtype(dtype)
 
-  def _func(xs: jnp.ndarray, shape: jnp.ndarray) -> ArrayLike:
+  def _func(xs: ArrayLike, shape: jnp.ndarray) -> ArrayLike:
     if xs.size == 0:
-      xs = _create_tensor_list(xs.shape[0], shape.tolist(), dtype=dtype)  # pyrefly: ignore[bad-assignment]
+      xs = _create_tensor_list(xs.shape[0], shape.tolist(), dtype=dtype)
     return xs
 
   return _func
@@ -2431,14 +2443,15 @@ def _xla_conv(proto):
         lhs,
         rhs,
         window_strides=strides.tolist(),
-        padding=[tuple(v) for v in padding],  # pyrefly: ignore[bad-argument-type]
+        padding=[(int(low), int(high)) for low, high in padding.tolist()],
         lhs_dilation=lhs_dilation.tolist(),
         rhs_dilation=rhs_dilation.tolist(),
         dimension_numbers=dimension_numbers,
         feature_group_count=feature_group_count.item(),
         batch_group_count=batch_group_count or 1,
-        precision=precision_config,  # pyrefly: ignore[bad-argument-type]
-        preferred_element_type=dst_dtype)
+        precision=precision_config,
+        preferred_element_type=dst_dtype,
+    )
 
   return _func
 
@@ -2468,8 +2481,9 @@ def _xla_dot(proto):
         lhs,
         rhs,
         dimension_numbers,
-        precision_config,  # pyrefly: ignore[bad-argument-type]
-        preferred_element_type=dst_dtype)
+        precision_config,
+        preferred_element_type=dst_dtype,
+    )
 
   return _func
 
@@ -2505,8 +2519,9 @@ def _xla_gather(proto):
       start_indices: jnp.ndarray,
       slice_indices: jnp.ndarray,
   ) -> jnp.ndarray:
-    return jax.lax.gather(operand, start_indices, dimension_numbers,
-                          slice_indices)  # pyrefly: ignore[bad-argument-type]
+    return jax.lax.gather(
+        operand, start_indices, dimension_numbers, slice_indices.tolist()
+    )
 
   return _func
 
@@ -2643,6 +2658,7 @@ class _XlaVariadicSort(_HigherOrderFunction):
     def get_operands():
       return sum([[jnp.array(0, dtype)] * 2 for dtype in dtypes], [])
 
+    num_keys = 0
     for idx in range(len(dtypes)):
       operands = get_operands()
       is_eq, = comparator(*operands)
@@ -2659,7 +2675,7 @@ class _XlaVariadicSort(_HigherOrderFunction):
       else:
         break
 
-    return num_keys  # pyrefly: ignore[unbound-name]
+    return num_keys
 
   def __call__(self, *args: jnp.ndarray, comparator: Callable[..., Any]):
     operands = args[:-1]
@@ -2727,11 +2743,11 @@ class _XlaReduceWindow(_HigherOrderFunction):
       *,
       computation: Callable[..., Any],
   ):
-    window_dimensions = window_dimensions.tolist()  # pyrefly: ignore[bad-assignment]
-    window_strides = window_strides.tolist()  # pyrefly: ignore[bad-assignment]
-    padding = padding.tolist()  # pyrefly: ignore[bad-assignment]
-    base_dilation = base_dilation.tolist()  # pyrefly: ignore[bad-assignment]
-    window_dilation = window_dilation.tolist()  # pyrefly: ignore[bad-assignment]
+    win_dims: list[int] = window_dimensions.tolist()
+    win_strides: list[int] = window_strides.tolist()
+    pad_list: list[list[int]] = padding.tolist()
+    base_dil: list[int] = base_dilation.tolist()
+    win_dil: list[int] = window_dilation.tolist()
 
     # Pattern matching computations that can be specialized.
     primitives = {
@@ -2750,14 +2766,18 @@ class _XlaReduceWindow(_HigherOrderFunction):
                    computation_jaxpr)
 
     def infer_cumulative_reduction():
-      ndims = len(window_dimensions)
+      ndims = len(win_dims)
       assert ndims == operand.ndim
-      reduce_axis = np.argmax(window_dimensions)
+      reduce_axis = np.argmax(win_dims)
       reduce_dim = operand.shape[reduce_axis]
       dims = [1] * ndims
       dims[reduce_axis] = reduce_dim
-      if not (window_dimensions == dims and window_strides == [1] * ndims and
-              base_dilation == [1] * ndims and window_dilation == [1] * ndims):
+      if not (
+          win_dims == dims
+          and win_strides == [1] * ndims
+          and base_dil == [1] * ndims
+          and win_dil == [1] * ndims
+      ):
         return (None, None, None)
 
       # Determine direction of reduction.
@@ -2766,9 +2786,9 @@ class _XlaReduceWindow(_HigherOrderFunction):
       reverse_padding = [[0, 0]] * ndims
       reverse_padding[reduce_axis] = [0, reduce_dim - 1]
       reverse = None
-      if padding == normal_padding:
+      if pad_list == normal_padding:
         reverse = False
-      elif padding == reverse_padding:
+      elif pad_list == reverse_padding:
         reverse = True
       else:
         return (None, None, None)
@@ -2794,11 +2814,12 @@ class _XlaReduceWindow(_HigherOrderFunction):
           operand,
           init_value,
           computation=computation_fn,
-          window_dimensions=window_dimensions,  # pyrefly: ignore[bad-argument-type]
-          window_strides=window_strides,  # pyrefly: ignore[bad-argument-type]
-          padding=[tuple(v) for v in padding],  # pyrefly: ignore[bad-argument-type]
-          base_dilation=base_dilation,  # pyrefly: ignore[bad-argument-type]
-          window_dilation=window_dilation)  # pyrefly: ignore[bad-argument-type]
+          window_dimensions=win_dims,
+          window_strides=win_strides,
+          padding=[(low, high) for low, high in pad_list],
+          base_dilation=base_dil,
+          window_dilation=win_dil,
+      )
 
 
 @register_operation("XlaReduceWindow")

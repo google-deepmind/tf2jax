@@ -32,7 +32,7 @@ from tf2jax._src import test_util
 from tf2jax._src import tf2jax
 import tree
 
-from tensorflow.compiler.xla import xla_data_pb2  # pytype: disable=import-error
+from tensorflow.compiler.xla import xla_data_pb2  # pylint: disable=no-name-in-module
 
 # Parse absl flags test_srcdir and test_tmpdir.
 jax.config.parse_flags_with_absl()
@@ -82,8 +82,7 @@ class Jax2TfTest(test_util.TestCase):
     # Jax
     jax_func = self.variant(jax_func)
     jax_outputs = jax_func(*inputs)
-    if with_grad:
-      jax_grads = _compute_gradients(jax_func, *inputs)
+    jax_grads = _compute_gradients(jax_func, *inputs) if with_grad else None
 
     # Jax -> TF
     tf_func = jax2tf.convert(jax_func, with_gradient=with_grad)
@@ -101,7 +100,7 @@ class Jax2TfTest(test_util.TestCase):
     jax.tree.map(self.assertAllClose, rejax_outputs, tf_outputs)
     if with_grad:
       rejax_grads = _compute_gradients(rejax_func, *inputs)
-      jax.tree.map(assert_grad_all_close, jax_grads, rejax_grads)  # pyrefly: ignore[unbound-name]
+      jax.tree.map(assert_grad_all_close, jax_grads, rejax_grads)
 
     # Jax -> TF -> SavedModel -> TF
     model = tf.Module()
@@ -282,7 +281,7 @@ class Jax2TfTest(test_util.TestCase):
       def __call__(self, x):
         return jax.lax.conv_general_dilated(
             x,
-            rhs=kernels,  # pyrefly: ignore[bad-argument-type]
+            rhs=jnp.asarray(kernels),
             window_strides=(1, 1),
             padding="SAME",
             lhs_dilation=(1, 1),
