@@ -240,8 +240,6 @@ class Jax2TfTest(test_util.TestCase):
   def test_conv2d(self, with_grad):
     np.random.seed(42)
 
-    tols = dict(rtol=1e-5) if jax.default_backend().lower() == "gpu" else {}
-
     class Conv2DModule(nn.Module):
       @nn.compact
       def __call__(self, x):
@@ -253,9 +251,7 @@ class Jax2TfTest(test_util.TestCase):
     forward = Conv2DModule()
     variables = forward.init(jax.random.key(42), jnp.zeros_like(inputs))
     jax_fn = forward.apply
-    self._test_convert(
-        jax_fn, [variables, inputs], with_grad=with_grad, grad_tols=tols
-    )
+    self._test_convert(jax_fn, [variables, inputs], with_grad=with_grad)
 
   @chex.variants(with_jit=True)
   @parameterized.named_parameters(
@@ -497,13 +493,6 @@ class Jax2TfTest(test_util.TestCase):
   def test_cumulative_reduction(
       self, with_grad, reducer, axis, reverse, use_heuristic
   ):
-    if (
-        with_grad
-        and not use_heuristic
-        and jax.default_backend().lower() == "tpu"
-    ):
-      self.skipTest("Gradient of reduce-window not always supported on TPU")
-
     np.random.seed(42)
 
     def forward(x):
@@ -612,15 +601,7 @@ class Jax2TfTest(test_util.TestCase):
 
     inputs = np.random.normal(size=(8, 5, 5, 3))
     jax_fn = jax.jacrev(forward)
-
-    try:
-      self._test_convert(jax_fn, [inputs], with_grad=with_grad)
-    except tf.errors.InvalidArgumentError as e:
-      if jax.default_backend().lower() == "tpu":
-        # Can fail on older TPUs.
-        self.assertIn("XLA can't use dynamic begin values for slice", str(e))  # pylint: disable=g-assert-in-except
-      else:
-        raise e
+    self._test_convert(jax_fn, [inputs], with_grad=with_grad)
 
   @chex.variants(with_jit=True)
   @parameterized.named_parameters(
@@ -1140,12 +1121,6 @@ class Jax2TfTest(test_util.TestCase):
       )
   )
   def test_reduce_precision(self, with_grad, with_custom_grad):
-    if jax.__version_info__ <= (0, 4, 4):
-      self.skipTest(
-          "jax.lax.reduce_precision is only supported from 0.4.4 and "
-          f"onward, found {jax.__version__}."
-      )
-
     np.random.seed(42)
 
     def forward(x):
@@ -1208,14 +1183,11 @@ class Jax2TfTest(test_util.TestCase):
           a, b, left_side=True, lower=lower, unit_diagonal=unit_diagonal
       )
 
-    tols = dict(atol=1e-5) if jax.default_backend().lower() == "tpu" else {}
-
     self._test_convert(
         forward,
         inputs,
         with_grad=with_grad,
         with_custom_grad=with_custom_grad,
-        grad_tols=tols,
     )
 
   def test_platform_check(self):

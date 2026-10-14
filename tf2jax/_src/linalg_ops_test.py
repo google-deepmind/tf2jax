@@ -170,12 +170,14 @@ class OpsTest(test_util.TestCase):
         self.assertAllClose(min(abs(w_jax[i] - w_tf)), 0., atol=1e-5)
 
     if compute_v:
-      tols = dict(atol=2e-5) if jax.default_backend() in "tpu" else {}
+      tols = dict(atol=1e-5) if jax.default_backend() in "tpu" else {}
       sym_inputs = np.tril(inputs) + np.swapaxes(np.tril(inputs, -1), -2, -1)
       self.assertAllClose(
-          np.matmul(sym_inputs, tf_v), tf_w[..., None, :] * tf_v, **tols)
+          np.matmul(sym_inputs, tf_v), tf_w[..., None, :] * tf_v, **tols
+      )
       self.assertAllClose(
-          np.matmul(sym_inputs, jax_v), jax_w[..., None, :] * jax_v, **tols)
+          np.matmul(sym_inputs, jax_v), jax_w[..., None, :] * jax_v, **tols
+      )
 
   @chex.variants(with_jit=True, without_jit=True)
   @parameterized.named_parameters(
@@ -258,10 +260,10 @@ class OpsTest(test_util.TestCase):
       sum_of_ratios = np.sum(np.divide(y, x), -2, keepdims=True)
       phases = np.divide(sum_of_ratios, np.abs(sum_of_ratios))
       x = x * phases
-      self.assertAllClose(x, y, atol=1e-4)
+      atol = 2e-5 if jax.default_backend() in "tpu" else 1e-5
+      self.assertAllClose(x, y, atol=atol)
 
-    tols = dict(atol=1e-5)
-    self.assertAllClose(jax_s, tf_s, **tols)
+    self.assertAllClose(jax_s, tf_s, atol=1e-5)
     if compute_uv:
       tf_recon = reconstruct(tf_u, tf_s, tf_v)
       jax_recon = reconstruct(jax_u, jax_s, jax_v)

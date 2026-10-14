@@ -181,12 +181,7 @@ class OpsTest(test_util.TestCase):
     np.random.seed(42)
     inputs = [np.random.normal(size=(10, 5)).astype(np.float32)]
 
-    if jax.default_backend().lower() == "tpu" and op_name in ("softplus",):
-      tols = dict(atol=1e-4)
-    else:
-      tols = {}
-
-    self._test_convert(getattr(tf.nn, op_name), inputs, **tols)
+    self._test_convert(getattr(tf.nn, op_name), inputs)
 
   @chex.variants(with_jit=True, without_jit=True)
   def test_assert(self):
@@ -290,12 +285,7 @@ class OpsTest(test_util.TestCase):
     def tf_func(x, y):
       return getattr(tf.raw_ops, op_name)(x=x, y=y)
 
-    if jax.default_backend().lower() == "tpu" and op_name in ("Pow",):
-      tols = dict(atol=1e-4)
-    else:
-      tols = {}
-
-    self._test_convert(tf_func, inputs, **tols)
+    self._test_convert(tf_func, inputs)
 
     # Check static inputs result in static outputs.
     def tf_static():
@@ -832,7 +822,7 @@ class OpsTest(test_util.TestCase):
           padding=padding,
           data_format=data_format,
           dilations=dilations)
-    self._test_convert(tf_func, inputs, atol=1e-4)
+    self._test_convert(tf_func, inputs)
 
     def raw_func(x):
       return tf.raw_ops.Conv2DBackpropInput(
@@ -843,7 +833,7 @@ class OpsTest(test_util.TestCase):
           padding=padding,
           data_format=data_format,
           dilations=dilations)
-    self._test_convert(raw_func, inputs, atol=1e-4)
+    self._test_convert(raw_func, inputs)
 
   @chex.variants(with_jit=True, without_jit=True)
   @parameterized.named_parameters(
@@ -1045,8 +1035,7 @@ class OpsTest(test_util.TestCase):
   def test_fft_ifft(self, fft_op, shape):
     np.random.seed(42)
     inputs = np.random.normal(size=(5,) + shape).astype(np.complex64)
-    tols = dict(atol=1e-4) if jax.default_backend().lower() == "cpu" else {}
-    self._test_convert(lambda x: fft_op(input=x), inputs, **tols)
+    self._test_convert(lambda x: fft_op(input=x), inputs)
 
   @chex.variants(with_jit=True, without_jit=True)
   @parameterized.named_parameters(
