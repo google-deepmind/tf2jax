@@ -14,6 +14,7 @@
 # ==============================================================================
 """Tests for JAX -> TF -> JAX."""
 
+import gc
 import os
 
 from absl import flags
@@ -1037,6 +1038,58 @@ class Jax2TfTest(test_util.TestCase):
     self.assertAllClose(6.0, jax.grad(jax_forward)(inputs))
     with self.assertRaises(LookupError):
       jax.grad(jax.grad(jax_forward))(inputs)
+
+  @chex.variants(without_jit=True, with_jit=True)
+  def test_custom_gradient_saved_model_higher_order_not_traced(self):
+    inputs = np.array(3.0, dtype=np.float32)
+    grad_of_grad_traces = 0
+
+    @tf.custom_gradient
+    def inner_grad(x):
+      def grad_of_grad(ddy):
+        nonlocal grad_of_grad_traces
+        grad_of_grad_traces += 1
+        return ddy * 10.0
+
+      return 2.0 * x, grad_of_grad
+
+    @tf.custom_gradient
+    def forward(x):
+      def grad(dy):
+        return dy * inner_grad(x)
+
+      return x * x, grad
+
+    model = tf.Module()
+    model.f = tf.function(
+        forward,
+        autograph=False,
+        input_signature=[tf.TensorSpec(shape=(), dtype=tf.float32)],
+    )
+    tmp_dir = self.create_tempdir()
+    tf.saved_model.save(model, tmp_dir.full_path)
+    del model
+    self.assertEqual(grad_of_grad_traces, 0)
+
+    # Convert both before and after collecting the temporary FuncGraph created
+    # during `tf.saved_model.save`. Uncalled gradient functions in the restored
+    # GraphDef library (`__inference_registered_grad_fn_*`) must not be scanned
+    # for custom gradients during forward conversion.
+    for collect_before_convert in (False, True):
+      if collect_before_convert:
+        gc.collect()
+      restored = tf.saved_model.load(tmp_dir.full_path)
+      with config.override_config("convert_custom_gradient", True):
+        jax_forward = tf2jax.convert_functional(
+            restored.f, tf.zeros_like(inputs)
+        )
+      self.assertEqual(grad_of_grad_traces, 0)
+
+      jax_forward = self.variant(jax_forward)
+      self.assertAllClose(9.0, jax_forward(inputs))
+      self.assertAllClose(6.0, jax.grad(jax_forward)(inputs))
+      with self.assertRaises(LookupError):
+        jax.grad(jax.grad(jax_forward))(inputs)
 
   @chex.variants(with_jit=True, without_jit=True)
   @parameterized.named_parameters(

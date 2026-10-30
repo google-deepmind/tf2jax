@@ -1385,9 +1385,9 @@ def _filter_nodes(
     if predicate(node):
       yield node, graph
   if hasattr(graph_def, "library"):
-    for func in graph_def.library.function:
+    for func_name, func in _get_function_protos(graph_def):
       # TODO(b/266553384) Use the public API once it is available.
-      library_fn = graph._functions[func.signature.name]  # pylint: disable=protected-access
+      library_fn = graph._functions[func_name]  # pylint: disable=protected-access
       for node in func.node_def:
         if predicate(node):
           yield node, library_fn.graph
@@ -1423,14 +1423,13 @@ def _convert_gradient_function(
   # Higher order gradient functions may be referenced in JAX2TF produced models
   # but not actually serialized.
   try:
-    tf_ops.gradient_registry.lookup(grad_fn_name)
+    fn = tf_ops.gradient_registry.lookup(grad_fn_name)
   except LookupError:
     library[grad_fn_name] = None
     return
 
   @tf.function(autograph=False)
   def tf_grad_fn(*grad_args, **grad_kwargs):
-    fn = tf_ops.gradient_registry.lookup(grad_fn_name)
     return fn(None, *grad_args, **grad_kwargs)
 
   try:
