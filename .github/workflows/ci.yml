@@ -8,6 +8,12 @@ on:
   schedule:
     - cron: '30 2 * * *'
 
+# Cancel superseded runs on the same pull request. Push and scheduled runs use
+# a unique group per run, so they are never cancelled.
+concurrency:
+  group: "${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}"
+  cancel-in-progress: true
+
 jobs:
   build-and-test:
     name: "Python ${{ matrix.python-version }} on ${{ matrix.os }}"
