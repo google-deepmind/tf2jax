@@ -211,11 +211,15 @@ class _LibraryFunction(NamedTuple):
     return params
 
   def __call__(self, *args, **kwargs):
-    if self.params:
-      return self.fn(self.params, *args, **kwargs)
-    else:
-      # Ignore parameters in inputs and outputs.
-      return self.fn({}, *args, **kwargs)[0]
+    params = self.params or {}
+    outputs, new_params = self.fn(params, *args, **kwargs)
+    updated_params = [k for k, v in new_params.items() if v is not params[k]]
+    if updated_params:
+      raise ValueError(
+          "Variable assignments not supported in library or custom_gradient "
+          f"functions, found {tuple(updated_params)}."
+      )
+    return outputs
 
 
 def _unbox_named_args(
