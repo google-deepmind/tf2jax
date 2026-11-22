@@ -14,25 +14,25 @@
 # ==============================================================================
 """JAX util functions."""
 
-from typing import Optional, Sequence, Union
+from typing import Optional, Sequence, Tuple, Union
 
 import jax
 import tensorflow as tf
 
 # TODO(shaobohou) Is there a non-direct alias?
-from tensorflow.compiler.xla import xla_data_pb2  # pytype: disable=import-error
+from tensorflow.compiler.xla import xla_data_pb2  # pylint: disable=no-name-in-module
 
 
 def get_conv_sequence(
     value: Union[int, Sequence[int]],
     ndim: int,
     channel_index: int,
-) -> Union[int, Sequence[int]]:
+) -> Sequence[int]:
   """Format strides or dilation sequences for conv operations."""
   if isinstance(value, int):
     return [value] * ndim
   elif len(value) == 1:
-    return value * ndim  # pyrefly: ignore[unsupported-operation]
+    return list(value) * ndim
   elif len(value) == ndim:
     return value
   elif len(value) == ndim + 2:
@@ -89,20 +89,23 @@ def scatter_dimension_numbers_from_proto(
 
 
 def precision_config_from_proto(
-    message) -> Optional[Union[jax.lax.Precision, Sequence[jax.lax.Precision]]]:
+    message,
+) -> Optional[
+    Union[jax.lax.Precision, Tuple[jax.lax.Precision, jax.lax.Precision]]
+]:
   """Converts a PrecisionConfig proto to jax.lax.Precision."""
   proto = xla_data_pb2.PrecisionConfig().FromString(message)
   precision_config = [
       jax.lax.Precision(v) for v in proto.operand_precision
   ]
   if not precision_config:
-    precision_config = None
+    return None
   elif len(precision_config) == 1:
-    precision_config = precision_config[0]
+    return precision_config[0]
+  elif len(precision_config) == 2:
+    return (precision_config[0], precision_config[1])
   else:
-    precision_config = tuple(precision_config)
-
-  return precision_config
+    raise ValueError(f"Unexpected precision_config={precision_config}.")
 
 
 def get_random_algorithm_from_tf(

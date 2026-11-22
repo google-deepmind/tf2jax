@@ -15,7 +15,7 @@
 """MHLO JAX primitive"."""
 
 import dataclasses
-from typing import Tuple
+from typing import Any, Tuple
 
 from jax import core
 from jax import export
@@ -65,7 +65,7 @@ mhlo_apply_p.def_impl(mhlo_apply_impl)
 # for reference
 def ir_type_to_dtype(ir_type: ir.Type) -> jnp.dtype:
   """Converts MLIR type to JAX dtype."""
-  ir_to_jax = {
+  ir_to_jax: dict[ir.Type, Any] = {
       ir.IntegerType.get_signless(1): jnp.bool_,
       ir.IntegerType.get_signless(8): jnp.int8,
       ir.IntegerType.get_signless(16): jnp.int16,
@@ -85,7 +85,7 @@ def ir_type_to_dtype(ir_type: ir.Type) -> jnp.dtype:
       ir.Float8E4M3FNType.get(): jnp.float8_e4m3fn,
       ir.Float8E5M2Type.get(): jnp.float8_e5m2,
   }
-  return ir_to_jax[ir_type]  # pyrefly: ignore[bad-index, bad-return]
+  return jnp.dtype(ir_to_jax[ir_type])
 
 
 _UNKNOWN_DIM_PREFIX = "tf2jax_unknown_dim"
@@ -134,8 +134,15 @@ def mhlo_apply_abstract_eval(
     ):
       reused_dim = next(iter(input_symbolic_dims))
 
+    main_op = symtab["main"]
+    if not isinstance(main_op, func.FuncOp):
+      raise ValueError(f"Expected FuncOp for 'main', got {type(main_op)}")
     output_specs = []
-    for idx, res in enumerate(symtab["main"].type.results):  # pyrefly: ignore[missing-attribute]
+    for idx, res in enumerate(main_op.type.results):
+      if not isinstance(res, ir.ShapedType):
+        raise ValueError(
+            f"Expected ShapedType for result {idx}, got {type(res)}"
+        )
       if any(dim == res.get_dynamic_size() for dim in res.shape):
         dims = []
         for dim in res.shape:
@@ -146,7 +153,7 @@ def mhlo_apply_abstract_eval(
           else:
             dynamic_count += 1
             dims.append(f"{_UNKNOWN_DIM_PREFIX}_{dynamic_count}")
-        out_shape = ", ".join(dims)
+        shape_spec = ", ".join(dims)
 
         assert has_polymorphic, has_polymorphic
         if module.assume_grad_fn:
@@ -155,7 +162,7 @@ def mhlo_apply_abstract_eval(
           out_shape = in_avals[idx + offset].shape
         else:
           out_shape = export.symbolic_shape(
-              out_shape, like=res.shape, scope=symbolic_scope
+              shape_spec, like=res.shape, scope=symbolic_scope
           )
       else:
         out_shape = res.shape
@@ -210,7 +217,12 @@ def mhlo_apply_lowering(
       src_module=mhlo_module)
 
   symtab = ir.SymbolTable(ctx.module_context.module.operation)
-  result_types = symtab[program_name].type.results  # pyrefly: ignore[missing-attribute]
+  program_op = symtab[program_name]
+  if not isinstance(program_op, func.FuncOp):
+    raise ValueError(
+        f"Expected FuncOp for '{program_name}', got {type(program_op)}"
+    )
+  result_types = program_op.type.results
 
   # Paranoid checks.
   assert len(mlir.flatten_ir_values(args)) == len(args), (
@@ -221,7 +233,7 @@ def mhlo_apply_lowering(
   call = func.CallOp(
       result_types,
       ir.FlatSymbolRefAttr.get(callee_name),
-      args,  # pyrefly: ignore[bad-argument-type]
+      list(args),
   )
   return tuple(x for x in call.results)
 
