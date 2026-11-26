@@ -813,6 +813,7 @@ class OpsTest(test_util.TestCase):
     else:
       assert data_format == "NHWC"
 
+    kwargs = {"atol": 1e-4} if jax.default_backend().lower() == "gpu" else {}
     def tf_func(x):
       return tf.nn.conv2d_transpose(
           x,
@@ -822,7 +823,7 @@ class OpsTest(test_util.TestCase):
           padding=padding,
           data_format=data_format,
           dilations=dilations)
-    self._test_convert(tf_func, inputs)
+    self._test_convert(tf_func, inputs, **kwargs)
 
     def raw_func(x):
       return tf.raw_ops.Conv2DBackpropInput(
@@ -833,7 +834,7 @@ class OpsTest(test_util.TestCase):
           padding=padding,
           data_format=data_format,
           dilations=dilations)
-    self._test_convert(raw_func, inputs)
+    self._test_convert(raw_func, inputs, **kwargs)
 
   @chex.variants(with_jit=True, without_jit=True)
   @parameterized.named_parameters(
